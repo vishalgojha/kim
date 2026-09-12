@@ -1,8 +1,10 @@
 import asyncio
 import logging
+import math
 import os
 import platform
 import shutil
+import struct
 from typing import Any, Callable, Optional
 
 log = logging.getLogger("aurora.audio")
@@ -162,6 +164,22 @@ class AudioOutput:
             await self._proc.stdin.drain()
         except (BrokenPipeError, ConnectionResetError):
             self._proc = None
+
+    async def play_tone(self, notes: list[tuple[float, float]], volume: float = 0.12) -> None:
+        """Play a short local UI tone without using the cloud voice."""
+        if not notes:
+            return
+        sample_rate = self.rate
+        pcm = bytearray()
+        for frequency, duration in notes:
+            count = max(1, int(sample_rate * duration))
+            for index in range(count):
+                # Tiny attack/release ramps keep the sound clean and click-free.
+                edge = min(index, count - index - 1) / max(1, int(sample_rate * 0.012))
+                envelope = min(1.0, max(0.0, edge))
+                sample = math.sin(2 * math.pi * frequency * index / sample_rate)
+                pcm.extend(struct.pack("<h", int(32767 * volume * envelope * sample)))
+        await self.write(bytes(pcm))
 
     async def interrupt(self) -> None:
         if self._stream:

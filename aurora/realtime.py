@@ -68,6 +68,15 @@ class RealtimeSession:
         except Exception:
             pass
 
+    async def _state_tone(self, state: str) -> None:
+        try:
+            if state == "wake":
+                await self.output.play_tone([(523.25, 0.08), (783.99, 0.14)])
+            elif state == "paused":
+                await self.output.play_tone([(392.00, 0.10), (261.63, 0.18)])
+        except Exception as e:  # noqa: BLE001
+            log.debug("state tone unavailable: %s", e)
+
     # ------------------------------------------------------------------ ws io
     async def _ws_url(self) -> str:
         try:
@@ -158,11 +167,13 @@ class RealtimeSession:
                         self._paused = True
                         self._set_voice_state("paused")
                         await self.output.interrupt()
+                        await self._state_tone("paused")
                         log.info("voice paused by stop phrase: %s", spoken)
                         print("\n  Kim paused. Say 'Kim' or 'wake up' to resume.")
                     elif self._paused and normalized in WAKE_PHRASES:
                         self._paused = False
                         self._set_voice_state("listening")
+                        await self._state_tone("wake")
                         log.info("voice resumed by wake phrase: %s", spoken)
                         print("\n  Kim listening.")
                     elif not self._paused:

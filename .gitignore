@@ -2,3 +2,7 @@
 __pycache__/
 *.pyc
 .env
+credentials.json
+token.json
+google_token.json
+whatsapp-mcp/

@@ -56,6 +56,16 @@ Kim is installed as a **global custom tool** in opencode, so any agent session i
 
 Restart opencode after adding it. In any conversation, just ask e.g. *"use the aurora tool to tell me on the speakers that lunch is ready"*.
 
+## WhatsApp read-only access
+
+Kim can read personal WhatsApp messages through the [WhatsApp MCP bridge](https://github.com/lharries/whatsapp-mcp), but does not expose its send tools. Run the bridge separately, scan its QR code once, then point Kim at its SQLite store:
+
+```bash
+export WHATSAPP_DB_PATH="$HOME/whatsapp-mcp/whatsapp-bridge/store/messages.db"
+```
+
+Kim provides `whatsapp_search`, `whatsapp_recent`, and `whatsapp_chats`. The database is opened in SQLite read-only mode.
+
 ## Example things you can say
 
 - "What's eating my CPU?"

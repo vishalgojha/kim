@@ -70,3 +70,6 @@ watcher:
   speak_alerts: true
   notify_alerts: true
   cooldown_secs: 600
+whatsapp:
+  db_path: ~/whatsapp-mcp/whatsapp-bridge/store/messages.db
+  read_only: true

@@ -1,0 +1,14 @@
+[Unit]
+Description=Kim WhatsApp read-only bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/vishal/whatsapp-mcp/whatsapp-bridge
+ExecStart=/home/vishal/.local/bin/go run main.go
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

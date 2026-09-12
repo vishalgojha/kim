@@ -1,0 +1,15 @@
+[Unit]
+Description=Kim floating orb panel
+After=graphical-session.target
+
+[Service]
+Type=simple
+Environment=DISPLAY=:0
+Environment=GDK_BACKEND=x11
+WorkingDirectory=/home/vishal/aurora
+ExecStart=/usr/bin/python3 /home/vishal/aurora/aurora/panel.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

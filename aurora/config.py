@@ -67,6 +67,10 @@ DEFAULTS: Dict[str, Any] = {
         "likes": ["beer", "coffee"],
         "building": "PropAI",
     },
+    "whatsapp": {
+        "db_path": "",
+        "read_only": True,
+    },
     "turn": {
         "turn_timeout": 7.0,
         "turn_eagerness": "normal",
