@@ -1,0 +1,15 @@
+[Unit]
+Description=Kim floating assistant (voice + watcher)
+After=sound.target
+Wants=aurora-mic.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/vishal/aurora
+EnvironmentFile=/home/vishal/aurora/.env
+ExecStart=/home/vishal/aurora/.venv/bin/python -m aurora voice
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

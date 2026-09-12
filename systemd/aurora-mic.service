@@ -1,0 +1,11 @@
+[Unit]
+Description=Kim: auto-enable microphone (unmute + 100%)
+After=sound.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/vishal/aurora
+ExecStart=/home/vishal/aurora/ensure_mic.sh
+
+[Install]
+WantedBy=default.target

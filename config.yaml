@@ -1,0 +1,72 @@
+elevenlabs:
+  api_key_env: ELEVENLABS_API_KEY
+  agent_id: agent_8501m292z3zzenrvmfyhyhzss022
+  voice_id: p9aflnsbBe1o0aDeQa97
+  region: ''
+  tts_model: eleven_multilingual_v2
+  conversational_tts_model: eleven_multilingual_v2
+agent:
+  name: Kim
+  first_message: "Hi Vishal, Kim here."
+  llm: gemini-3.8-flash
+  language: hi
+  client_events:
+  - ping
+  - audio
+  - interruption
+  - user_transcript
+  - agent_response
+  - agent_response_correction
+  - client_tool_call
+  - agent_response_complete
+user:
+  name: Vishal
+  birth_date: '1984-10-13'
+  description: tall, bald, and handsome — his words
+  likes:
+  - beer
+  - coffee
+  building: PropAI
+turn:
+  turn_timeout: 7.0
+  turn_eagerness: normal
+  silence_end_call_timeout: -1.0
+audio:
+  input_device: ''
+  output_device: ''
+  rate: 16000
+  channels: 1
+  chunk_ms: 250
+  gain: 2.0
+permissions:
+  default: allow
+  ask_for:
+  - sudo
+  - apt
+  - dnf
+  - pacman
+  - pip uninstall
+  - shutdown
+  - reboot
+  block_patterns:
+  - rm -rf /
+  - rm -fr /
+  - mkfs
+  - dd if=
+  - '> /dev/sd'
+  - chmod -R 777 /
+  - curl.*\|.*sh
+  - wget.*\|.*sh
+  timeout_secs: 60
+  max_output_chars: 6000
+watcher:
+  enabled: true
+  check_interval_secs: 30
+  battery_alert_pct: 20
+  battery_restore_pct: 40
+  disk_alert_pct: 90
+  disk_restore_pct: 80
+  watch_dirs: []
+  speak_alerts: true
+  notify_alerts: true
+  cooldown_secs: 600

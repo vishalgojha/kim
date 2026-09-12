@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Kim Panel
+Comment=Kim voice assistant controls
+Exec=/usr/bin/python3 /home/vishal/aurora/aurora/panel.py
+Terminal=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=5
