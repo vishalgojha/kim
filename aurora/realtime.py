@@ -5,6 +5,7 @@ import logging
 import re
 import sys
 import time
+from pathlib import Path
 from typing import Any, Dict
 
 import websockets
@@ -33,6 +34,7 @@ WAKE_PHRASES = {
     "wake up",
     "kim wake up",
 }
+VOICE_STATE_PATH = Path.home() / ".aurora" / "voice_state"
 
 
 class RealtimeSession:
@@ -56,6 +58,15 @@ class RealtimeSession:
         self._conversation_id = None
         self._running = True
         self._paused = False
+        self._set_voice_state("offline")
+
+    @staticmethod
+    def _set_voice_state(state: str) -> None:
+        try:
+            VOICE_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            VOICE_STATE_PATH.write_text(state)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------ ws io
     async def _ws_url(self) -> str:
@@ -119,6 +130,7 @@ class RealtimeSession:
             elif mtype == "audio":
                 if self._paused:
                     return
+                self._set_voice_state("responding")
                 ev = msg.get("audio_event", {})
                 try:
                     if int(ev.get("event_id", 0)) <= self._last_interrupt_id:
@@ -144,11 +156,13 @@ class RealtimeSession:
                     normalized = re.sub(r"[^a-z0-9 ]+", "", spoken.lower()).strip()
                     if normalized in STOP_PHRASES:
                         self._paused = True
+                        self._set_voice_state("paused")
                         await self.output.interrupt()
                         log.info("voice paused by stop phrase: %s", spoken)
                         print("\n  Kim paused. Say 'Kim' or 'wake up' to resume.")
                     elif self._paused and normalized in WAKE_PHRASES:
                         self._paused = False
+                        self._set_voice_state("listening")
                         log.info("voice resumed by wake phrase: %s", spoken)
                         print("\n  Kim listening.")
                     elif not self._paused:
@@ -167,6 +181,8 @@ class RealtimeSession:
                 asyncio.create_task(self._run_tool(call))
 
             elif mtype == "agent_response_complete":
+                if not self._paused:
+                    self._set_voice_state("listening")
                 log.debug("agent response complete")
 
             elif mtype in ("client_error",):
@@ -206,6 +222,7 @@ class RealtimeSession:
             await self._send({"user_audio_chunk": base64.b64encode(chunk).decode()})
 
         await self.capture.start(mic_callback)
+        self._set_voice_state("listening")
         log.info("voice session live (agent %s)", self.agent_id)
         await self._receive_loop()
         await self.capture.stop()
@@ -220,6 +237,7 @@ class RealtimeSession:
             except Exception as e:  # noqa: BLE001
                 log.error("session dropped: %s", e)
             await self.close()
+            self._set_voice_state("offline")
             await self.capture.stop()
             await self.output.interrupt()
             if not self._running:

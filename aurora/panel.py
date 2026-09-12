@@ -2,6 +2,7 @@
 """Kim panel: a small always-on-top button centered below the top bar.
 Click it for Wake / Say / Status."""
 import os
+from pathlib import Path
 import subprocess
 import sys
 import threading
@@ -17,6 +18,8 @@ from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 KIM_ROOT = "/home/vishal/aurora"
 PY = f"{KIM_ROOT}/.venv/bin/python"
+ORB_ASSET = Path(KIM_ROOT) / "assets" / "kim-orb.svg"
+VOICE_STATE_PATH = Path.home() / ".aurora" / "voice_state"
 
 
 def sh(cmd, timeout=130):
@@ -33,44 +36,105 @@ class KimButton(Gtk.Window):
         self.set_skip_taskbar_hint(True)
         self.set_keep_above(True)
         self.set_resizable(False)
-        self.set_default_size(208, 44)
+        self.set_default_size(136, 136)
         self.set_position(Gtk.WindowPosition.NONE)
+        screen = Gdk.Screen.get_default()
+        if screen:
+            visual = screen.get_rgba_visual()
+            if visual:
+                self.set_visual(visual)
+        self.set_app_paintable(True)
 
-        self.box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
+        self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self.set_name("kim-window")
+        self.box.set_name("kim-container")
         self.add(self.box)
+
+        css = Gtk.CssProvider()
+        css.load_from_data(b"""
+        #kim-window, #kim-container {
+            background-color: transparent;
+        }
+        #kim-orb-shell {
+            background-color: rgba(46, 54, 150, 0.45);
+            border: 1px solid rgba(151, 160, 255, 0.65);
+            border-radius: 999px;
+            padding: 7px;
+        }
+        #kim-orb {
+            background-color: #343bff;
+            border: 2px solid #a5afff;
+            border-radius: 999px;
+            min-width: 78px;
+            min-height: 78px;
+        }
+        #kim-orb.active {
+            background-color: #693cff;
+            border-color: #d4c7ff;
+        }
+        #kim-orb.responding {
+            background-color: #b33cff;
+            border-color: #ffd4fa;
+        }
+        #kim-orb.paused {
+            background-color: #333746;
+            border-color: #7d8297;
+        }
+        #kim-orb label { color: #ffffff; font-weight: bold; }
+        #kim-status { color: #c7ccff; font-size: 9px; font-weight: bold; }
+        """)
+        Gtk.StyleContext.add_provider_for_screen(
+            Gdk.Screen.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+
+        self.orb_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        self.box.pack_start(self.orb_row, True, True, 0)
 
         self.drag_handle = Gtk.EventBox()
         self.drag_handle.add(Gtk.Label(label="⠿"))
         self.drag_handle.set_tooltip_text("Drag Kim anywhere")
-        self.drag_handle.set_size_request(20, -1)
+        self.drag_handle.set_size_request(20, 76)
         self.drag_handle.connect("button-press-event", self._start_drag)
-        self.box.pack_start(self.drag_handle, False, False, 0)
+        self.orb_row.pack_start(self.drag_handle, False, False, 0)
+
+        self.shell = Gtk.EventBox()
+        self.shell.set_name("kim-orb-shell")
+        self.shell.set_size_request(96, 96)
 
         self.btn = Gtk.EventBox()
-        self.btn_label = Gtk.Label(label="Kim")
-        self.btn_label.set_xalign(0.5)
-        self.btn.add(self.btn_label)
-        self.btn.set_size_request(128, -1)
-        self.box.pack_start(self.btn, True, True, 0)
+        self.btn.set_name("kim-orb")
+        self.orb_image = Gtk.Image.new_from_file(str(ORB_ASSET))
+        self.btn.add(self.orb_image)
+        self.btn.set_size_request(80, 80)
+        self.shell.add(self.btn)
+        self.orb_row.pack_start(self.shell, True, True, 0)
         self.btn.connect("button-press-event", self.on_clicked)
+
+        self.status_label = Gtk.Label(label="OFFLINE")
+        self.status_label.set_name("kim-status")
+        self.box.pack_start(self.status_label, False, False, 0)
+
+        self.controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=3)
+        self.box.pack_start(self.controls, False, False, 0)
 
         self.wake_btn = Gtk.EventBox()
         self.wake_btn.add(Gtk.Label(label="▶"))
         self.wake_btn.set_tooltip_text("Wake and listen")
         self.wake_btn.set_size_request(32, -1)
         self.wake_btn.connect("button-press-event", lambda *_: self.do_wake())
-        self.box.pack_start(self.wake_btn, False, False, 0)
+        self.controls.pack_start(self.wake_btn, True, True, 0)
 
         self.stop_btn = Gtk.EventBox()
         self.stop_btn.add(Gtk.Label(label="■"))
         self.stop_btn.set_tooltip_text("Stop listening")
         self.stop_btn.set_size_request(32, -1)
         self.stop_btn.connect("button-press-event", lambda *_: self.do_stop())
-        self.box.pack_start(self.stop_btn, False, False, 0)
+        self.controls.pack_start(self.stop_btn, True, True, 0)
 
         self._voice_active = False
+        self._voice_state = "offline"
         self._wave_index = 0
-        self._wave_frames = ["▁▂▃▅▃▂", "▂▃▅▇▅▃", "▃▅▇▅▃▂", "▅▇▅▃▂▁"]
+        self._wave_frames = ["·  ·  ·", "·  •  ·", "•  ●  •", "·  •  ·"]
         GLib.timeout_add(160, self._animate_wave)
         GLib.timeout_add(1000, self._refresh_voice_state)
 
@@ -139,18 +203,32 @@ class KimButton(Gtk.Window):
         threading.Thread(target=runner, daemon=True).start()
 
     def _refresh_voice_state(self):
-        self._voice_active = sh(
-            ["systemctl", "--user", "is-active", "--quiet", "aurora"]
-        ).returncode == 0
+        try:
+            state = VOICE_STATE_PATH.read_text().strip().lower()
+        except Exception:
+            state = ""
+        if state not in {"offline", "listening", "responding", "paused"}:
+            state = "listening" if sh(
+                ["systemctl", "--user", "is-active", "--quiet", "aurora"]
+            ).returncode == 0 else "offline"
+        self._voice_state = state
+        self._voice_active = state != "offline"
+        self.status_label.set_text(state.upper())
+        for name in ("active", "responding", "paused"):
+            self.btn.get_style_context().remove_class(name)
+        if state == "listening":
+            self.btn.get_style_context().add_class("active")
+        elif state in {"responding", "paused"}:
+            self.btn.get_style_context().add_class(state)
         return True
 
     def _animate_wave(self):
-        if self._voice_active:
+        if self._voice_state in {"listening", "responding"}:
             frame = self._wave_frames[self._wave_index % len(self._wave_frames)]
-            self.btn_label.set_text(f"Kim  {frame}")
+            self.orb_image.set_opacity(0.82 + 0.16 * ((self._wave_index % 4) / 3))
             self._wave_index += 1
         else:
-            self.btn_label.set_text("Kim")
+            self.orb_image.set_opacity(1.0)
         return True
 
     def do_wake(self):
@@ -219,7 +297,7 @@ class KimButton(Gtk.Window):
             self.show_all()
             return
         geo = monitor.get_geometry()
-        w, h = 208, 44
+        w, h = 136, 136
         self.move(geo.x + (geo.width - w) // 2, geo.y + 38)
         self.show_all()
 
