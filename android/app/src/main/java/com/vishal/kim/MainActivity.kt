@@ -32,36 +32,46 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         scheduleApprovalWatcher()
         if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 6)
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 32, 24, 24) }
-        TextView(this).apply { text = "Kim"; textSize = 34f }.also(root::addView)
-        TextView(this).apply { text = "Your personal assistant"; textSize = 17f }.also(root::addView)
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 38, 24, 28) }
+        TextView(this).apply { text = "Kim"; textSize = 36f }.also(root::addView)
+        TextView(this).apply { text = "Good to see you. What can I take care of?"; textSize = 18f; setPadding(0, 4, 0, 24) }.also(root::addView)
         pin = EditText(this).apply { hint = "Kim PIN"; setText(prefs.getString("pin", "")); inputType = 0x81; maxLines = 1 }
         root.addView(pin)
-        val save = Button(this).apply { text = "Connect"; setOnClickListener { prefs.edit().putString("pin", pin.text.toString()).apply(); refresh() } }
+        val save = Button(this).apply { text = "Connect phone to Kim"; setOnClickListener { prefs.edit().putString("pin", pin.text.toString()).apply(); startDeviceBridge(); refresh() } }
         root.addView(save)
         status = TextView(this).apply { text = "Not connected"; textSize = 16f; setPadding(0, 16, 0, 16) }
         root.addView(status)
         root.addView(Button(this).apply { text = "Talk to Kim"; setOnClickListener { startListening() } })
-        root.addView(TextView(this).apply { text = "Phone permissions"; textSize = 22f; setPadding(0, 22, 0, 4) })
-        root.addView(TextView(this).apply { text = "Grant only the access you want Kim to use."; textSize = 14f })
-        root.addView(Button(this).apply { text = "Allow microphone"; setOnClickListener { requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 5) } })
-        root.addView(Button(this).apply { text = "Allow notifications"; setOnClickListener { if (android.os.Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 6) } })
-        root.addView(Button(this).apply { text = "Enable notification access"; setOnClickListener { startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")) } })
-        root.addView(Button(this).apply { text = "Enable accessibility controls"; setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } })
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        row.addView(Button(this).apply { text = "Pause"; setOnClickListener { control("pause") } }, LinearLayout.LayoutParams(0, -2, 1f))
-        row.addView(Button(this).apply { text = "Wake"; setOnClickListener { control("wake") } }, LinearLayout.LayoutParams(0, -2, 1f))
-        root.addView(row)
-        root.addView(TextView(this).apply { text = "Approvals"; textSize = 22f; setPadding(0, 22, 0, 4) })
-        root.addView(Button(this).apply { text = "Refresh approvals"; setOnClickListener { refreshApprovals() } })
+        root.addView(TextView(this).apply { text = "Try asking"; textSize = 21f; setPadding(0, 20, 0, 8) })
+        root.addView(Button(this).apply { text = "Show me today's priorities"; setOnClickListener { runQuickAction("gmail_today", "Checking your day…") } })
+        root.addView(Button(this).apply { text = "What's on my calendar?"; setOnClickListener { runQuickAction("calendar_upcoming", "Checking your calendar…") } })
+        root.addView(Button(this).apply { text = "Help me send an email"; setOnClickListener { showRequestDialog() } })
+        root.addView(TextView(this).apply { text = "Requests"; textSize = 21f; setPadding(0, 20, 0, 8) })
         approvalsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(approvalsBox)
-        root.addView(Button(this).apply { text = "Request an action"; setOnClickListener { showRequestDialog() } })
-        root.addView(Button(this).apply { text = "Check integrations"; setOnClickListener { refreshIntegrations() } })
-        root.addView(Button(this).apply { text = "Stop listening"; setOnClickListener { stopService(Intent(this@MainActivity, KimVoiceService::class.java)) } })
+        root.addView(Button(this).apply { text = "Review requests"; setOnClickListener { refreshApprovals() } })
+        root.addView(Button(this).apply { text = "Settings"; setOnClickListener { showSettings() } })
         val screen = ScrollView(this).apply { setBackgroundColor(Color.BLACK); addView(root) }
         theme(screen)
         setContentView(screen)
+        if (pin.text.isNullOrBlank()) showSettings()
+    }
+
+    private fun runQuickAction(name: String, label: String) {
+        status.text = label
+        executor.execute { val value = runCatching { client().runTool(name, JSONObject()) }.getOrElse { it.message ?: "Kim is unavailable" }; runOnUiThread { status.text = value } }
+    }
+
+    private fun showSettings() {
+        val form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 0, 24, 0) }
+        val setupPin = EditText(this).apply { hint = "Private Kim PIN"; setText(prefs.getString("pin", "")); inputType = 0x81; maxLines = 1 }
+        form.addView(setupPin)
+        form.addView(Button(this).apply { text = "Connect this phone"; setOnClickListener { prefs.edit().putString("pin", setupPin.text.toString()).apply(); startDeviceBridge(); refresh(); status.text = "Phone connected" } })
+        form.addView(Button(this).apply { text = "Allow microphone"; setOnClickListener { requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 5) } })
+        form.addView(Button(this).apply { text = "Allow notifications"; setOnClickListener { if (android.os.Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 6) } })
+        form.addView(Button(this).apply { text = "Notification access"; setOnClickListener { startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")) } })
+        form.addView(Button(this).apply { text = "Accessibility controls"; setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } })
+        AlertDialog.Builder(this).setTitle("Kim settings").setView(form).setNegativeButton("Close", null).show()
     }
 
     private fun theme(view: View) {
@@ -152,6 +162,9 @@ class MainActivity : Activity() {
     private fun startListening() {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 5)
         else startForegroundService(Intent(this, KimVoiceService::class.java))
+    }
+    private fun startDeviceBridge() {
+        startForegroundService(Intent(this, KimForegroundService::class.java))
     }
     private fun scheduleApprovalWatcher() {
         val request = PeriodicWorkRequestBuilder<KimApprovalWorker>(15, TimeUnit.MINUTES).build()
