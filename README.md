@@ -70,7 +70,7 @@ Kim provides `whatsapp_search`, `whatsapp_recent`, `whatsapp_chats`, and `whatsa
 
 The native Android companion at `android/` can connect directly to the hosted control panel. It stores the PIN in encrypted Android preferences, supports background approval notifications, streams voice through the signed ElevenLabs session, and handles read-only tool calls directly. Sensitive actions create an approval; once approved, they execute in the cloud when the relevant cloud connector is configured, otherwise they queue for the laptop relay.
 
-For cloud Gmail and Calendar, authorize Google once and store the resulting authorized-user JSON as the masked Coolify runtime secret `GOOGLE_TOKEN_JSON`. Enable cloud execution with `KIM_REMOTE_DIRECT_TOOLS=gmail_send,calendar_create,whatsapp_send`; read-only cloud tools are enabled with `KIM_REMOTE_ALLOWED_TOOLS`.
+For cloud Gmail and Calendar, Kim uses Nango for connector authentication and its authenticated API proxy. Configure the masked Coolify runtime variables `NANGO_SECRET_KEY`, `NANGO_GMAIL_INTEGRATION_ID`, `NANGO_GMAIL_CONNECTION_ID`, `NANGO_CALENDAR_INTEGRATION_ID`, and `NANGO_CALENDAR_CONNECTION_ID`. Set `NANGO_BASE_URL` only when using a self-hosted Nango instance; it defaults to `https://api.nango.dev`. Nango stores and refreshes provider credentials, while Kim only receives the API response. Enable cloud execution with `KIM_REMOTE_DIRECT_TOOLS=gmail_send,calendar_create,whatsapp_send`; read-only cloud tools are enabled with `KIM_REMOTE_ALLOWED_TOOLS`.
 
 ## Example things you can say
 

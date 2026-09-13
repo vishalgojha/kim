@@ -164,7 +164,7 @@ class RemoteServer:
                     self._reply(200, {"ok": True, "voice_state": state, "allowed_tools": sorted(owner.allowed_tools), "direct_tools": sorted(owner.direct_tools)})
                     return
                 if self.path == "/v1/integrations":
-                    google_ready = bool(os.environ.get("GOOGLE_TOKEN_JSON", "").strip()) or Path(os.environ.get("GOOGLE_TOKEN_PATH", "~/.aurora/google-token.json")).expanduser().exists()
+                    google_ready = bool(os.environ.get("NANGO_SECRET_KEY", "").strip() and os.environ.get("NANGO_GMAIL_INTEGRATION_ID", "").strip() and os.environ.get("NANGO_GMAIL_CONNECTION_ID", "").strip()) or bool(os.environ.get("GOOGLE_TOKEN_JSON", "").strip()) or Path(os.environ.get("GOOGLE_TOKEN_PATH", "~/.aurora/google-token.json")).expanduser().exists()
                     whatsapp_ready = bool(os.environ.get("WHATSAPP_CLOUD_API_TOKEN", "").strip() and os.environ.get("WHATSAPP_CLOUD_PHONE_NUMBER_ID", "").strip())
                     self._reply(200, {"ok": True, "integrations": {
                         "gmail": {"cloud": google_ready, "laptop_fallback": True},
@@ -476,9 +476,9 @@ class RemoteServer:
     def _can_execute_direct(self, name: str) -> bool:
         """Only use cloud execution when that connector's secret is present."""
         if name in {"gmail_send", "gmail_search", "gmail_read", "gmail_today", "gmail_unanswered", "gmail_contacts"}:
-            return (bool(os.environ.get("COMPOSIO_API_KEY", "").strip()) and bool(os.environ.get("COMPOSIO_GMAIL_ACCOUNT_ID", "").strip())) or bool(os.environ.get("GOOGLE_TOKEN_JSON", "").strip()) or Path(os.environ.get("GOOGLE_TOKEN_PATH", "~/.aurora/google-token.json")).expanduser().exists()
+            return (bool(os.environ.get("NANGO_SECRET_KEY", "").strip()) and bool(os.environ.get("NANGO_GMAIL_INTEGRATION_ID", "").strip()) and bool(os.environ.get("NANGO_GMAIL_CONNECTION_ID", "").strip())) or bool(os.environ.get("GOOGLE_TOKEN_JSON", "").strip()) or Path(os.environ.get("GOOGLE_TOKEN_PATH", "~/.aurora/google-token.json")).expanduser().exists()
         if name in {"calendar_create", "calendar_upcoming"}:
-            return (bool(os.environ.get("COMPOSIO_API_KEY", "").strip()) and bool(os.environ.get("COMPOSIO_CALENDAR_ACCOUNT_ID", "").strip())) or bool(os.environ.get("GOOGLE_TOKEN_JSON", "").strip()) or Path(os.environ.get("GOOGLE_TOKEN_PATH", "~/.aurora/google-token.json")).expanduser().exists()
+            return (bool(os.environ.get("NANGO_SECRET_KEY", "").strip()) and bool(os.environ.get("NANGO_CALENDAR_INTEGRATION_ID", "").strip()) and bool(os.environ.get("NANGO_CALENDAR_CONNECTION_ID", "").strip())) or bool(os.environ.get("GOOGLE_TOKEN_JSON", "").strip()) or Path(os.environ.get("GOOGLE_TOKEN_PATH", "~/.aurora/google-token.json")).expanduser().exists()
         if name == "whatsapp_send":
             return bool(os.environ.get("WHATSAPP_CLOUD_API_TOKEN", "").strip() and os.environ.get("WHATSAPP_CLOUD_PHONE_NUMBER_ID", "").strip())
         return True
