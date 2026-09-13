@@ -49,10 +49,12 @@ class RemoteServer:
         self.speak = speak
         self.voice_url = voice_url
         self.audit_path = Path(str(remote.get("audit_path", "~/.aurora/remote-audit.jsonl"))).expanduser()
+        self.state_path = Path(str(remote.get("state_path", "~/.aurora/remote-state.json"))).expanduser()
         self.approvals: Dict[str, Dict[str, Any]] = {}
         self.approvals_lock = threading.Lock()
         self.commands: list[Dict[str, Any]] = []
         self.commands_lock = threading.Lock()
+        self._load_state()
         self.server: Optional[ThreadingHTTPServer] = None
         self.thread: Optional[threading.Thread] = None
 
@@ -132,6 +134,7 @@ class RemoteServer:
                 if self.path == "/v1/commands/next":
                     with owner.commands_lock:
                         command = owner.commands.pop(0) if owner.commands else None
+                        owner._persist_state()
                     self._reply(200, {"ok": True, "command": command})
                     return
                 if self.path == "/v1/voice/session":
@@ -164,6 +167,7 @@ class RemoteServer:
                         owner.control_path.write_text(action)
                         with owner.commands_lock:
                             owner.commands.append({"type": "control", "action": action})
+                            owner._persist_state()
                         owner._audit("control", {"action": action}, True)
                         self._reply(200, {"ok": True, "action": action})
                         return
@@ -194,6 +198,7 @@ class RemoteServer:
                         record = {"id": approval_id, "name": name, "parameters": data.get("parameters", {}), "summary": str(data.get("summary", name))[:500], "status": "pending", "created_at": time.time()}
                         with owner.approvals_lock:
                             owner.approvals[approval_id] = record
+                            owner._persist_state()
                         owner._audit("approval_requested", {"id": approval_id, "name": name}, True)
                         self._reply(202, {"ok": True, "approval": {k: v for k, v in record.items() if k != "parameters"}})
                         return
@@ -211,6 +216,7 @@ class RemoteServer:
                                 self._reply(409, {"error": "approval already resolved"})
                                 return
                             record["status"] = "approved" if action == "approve" else "rejected"
+                            owner._persist_state()
                         if action == "approve":
                             with owner.commands_lock:
                                 owner.commands.append({"type": "tool", "approval_id": approval_id, "name": record["name"], "parameters": record["parameters"]})
@@ -229,6 +235,7 @@ class RemoteServer:
                                 return
                             record["status"] = "failed" if data.get("is_error") else "completed"
                             record["result"] = str(data.get("result", ""))[:20_000]
+                            owner._persist_state()
                         owner._audit("approval_result", {"id": approval_id, "name": record["name"], "error": bool(data.get("is_error"))}, not data.get("is_error"))
                         self._reply(200, {"ok": True, "status": record["status"]})
                         return
@@ -261,6 +268,33 @@ class RemoteServer:
                 fh.write(json.dumps({"ts": time.time(), "action": action, "details": details, "ok": ok}) + "\n")
         except OSError:
             log.warning("could not write remote audit record", exc_info=True)
+
+    def _load_state(self) -> None:
+        """Restore queued approvals/commands after a process restart."""
+        try:
+            state = json.loads(self.state_path.read_text(encoding="utf-8"))
+            approvals = state.get("approvals", {})
+            commands = state.get("commands", [])
+            if isinstance(approvals, dict):
+                self.approvals = {str(k): v for k, v in approvals.items() if isinstance(v, dict)}
+            if isinstance(commands, list):
+                self.commands = [v for v in commands if isinstance(v, dict)]
+        except (OSError, json.JSONDecodeError):
+            return
+
+    def _persist_state(self) -> None:
+        """Atomically persist queue state without putting it in the audit log."""
+        try:
+            self.state_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self.state_path.with_suffix(self.state_path.suffix + ".tmp")
+            temporary.write_text(json.dumps({"approvals": self.approvals, "commands": self.commands}, ensure_ascii=False), encoding="utf-8")
+            os.replace(temporary, self.state_path)
+            try:
+                self.state_path.chmod(0o600)
+            except OSError:
+                pass
+        except OSError:
+            log.warning("could not persist remote queue state", exc_info=True)
 
     def _run(self, awaitable: Awaitable[Any]) -> Any:
         future = asyncio.run_coroutine_threadsafe(awaitable, self.loop)

@@ -81,6 +81,7 @@ DEFAULTS: Dict[str, Any] = {
         "domain": "app.vishalojha.me",
         "cors_origins": ["https://app.vishalojha.me"],
         "audit_path": "~/.aurora/remote-audit.jsonl",
+        "state_path": "~/.aurora/remote-state.json",
         "allowed_tools": ["system_info", "battery", "disk_usage", "running_processes", "known_apps"],
     },
     "turn": {
