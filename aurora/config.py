@@ -97,7 +97,7 @@ DEFAULTS: Dict[str, Any] = {
         "rate": 16000,
         "channels": 1,
         "chunk_ms": 250,
-        "gain": 3.0,
+        "gain": 1.2,
     },
     "permissions": {
         "default": "allow",

@@ -29,9 +29,9 @@ async def volume_get() -> str:
 
 @tool(
     "volume_set",
-    "Set speaker volume and/or mute. Percent 0-150.",
+    "Set speaker volume and/or mute. Percent 0-120.",
     {
-        "percent": {"type": "integer", "description": "target volume 0-150", "required": False},
+        "percent": {"type": "integer", "description": "target volume 0-120", "required": False},
         "mute": {"type": "boolean", "description": "true=mute, false=unmute", "required": False},
     },
     timeout=15,
@@ -39,7 +39,8 @@ async def volume_get() -> str:
 async def volume_set(percent: int | None = None, mute: bool | None = None) -> str:
     lines = []
     if percent is not None:
-        lines.append(await _pactl(["set-sink-volume", "@DEFAULT_SINK@", f"{int(percent)}%"]))
+        safe_percent = max(0, min(120, int(percent)))
+        lines.append(await _pactl(["set-sink-volume", "@DEFAULT_SINK@", f"{safe_percent}%"]))
     if mute is not None:
         lines.append(await _pactl(["set-sink-mute", "@DEFAULT_SINK@", "1" if mute else "0"]))
     return "; ".join(lines) if lines else "nothing to do"
