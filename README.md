@@ -56,15 +56,21 @@ Kim is installed as a **global custom tool** in opencode, so any agent session i
 
 Restart opencode after adding it. In any conversation, just ask e.g. *"use the aurora tool to tell me on the speakers that lunch is ready"*.
 
-## WhatsApp read-only access
+## WhatsApp access
 
-Kim can read personal WhatsApp messages through the [WhatsApp MCP bridge](https://github.com/lharries/whatsapp-mcp), but does not expose its send tools. Run the bridge separately, scan its QR code once, then point Kim at its SQLite store:
+Kim can search the local WhatsApp message index and send messages through the linked local bridge. Sending is confirmation-gated: Kim drafts the recipient/message first and only sends after an explicit `confirm: yes`.
 
 ```bash
 export WHATSAPP_DB_PATH="$HOME/whatsapp-mcp/whatsapp-bridge/store/messages.db"
 ```
 
-Kim provides `whatsapp_search`, `whatsapp_recent`, and `whatsapp_chats`. The database is opened in SQLite read-only mode.
+Kim provides `whatsapp_search`, `whatsapp_recent`, `whatsapp_chats`, and `whatsapp_send`. The database remains read-only. For a laptop-independent deployment, configure Meta WhatsApp Cloud API secrets in Coolify: `WHATSAPP_CLOUD_API_TOKEN` and `WHATSAPP_CLOUD_PHONE_NUMBER_ID`.
+
+## Android and cloud mode
+
+The native Android companion at `android/` can connect directly to the hosted control panel. It stores the PIN in encrypted Android preferences, supports background approval notifications, streams voice through the signed ElevenLabs session, and handles read-only tool calls directly. Sensitive actions create an approval; once approved, they execute in the cloud when the relevant cloud connector is configured, otherwise they queue for the laptop relay.
+
+For cloud Gmail and Calendar, authorize Google once and store the resulting authorized-user JSON as the masked Coolify runtime secret `GOOGLE_TOKEN_JSON`. Enable cloud execution with `KIM_REMOTE_DIRECT_TOOLS=gmail_send,calendar_create,whatsapp_send`; read-only cloud tools are enabled with `KIM_REMOTE_ALLOWED_TOOLS`.
 
 ## Example things you can say
 
@@ -94,14 +100,13 @@ Everything runs under a policy in `config.yaml`:
 
 ## Phone and web control
 
-Kim includes an opt-in, authenticated remote control plane for a phone/web client. It is disabled by default and only exposes the read-only tools listed in `remote.allowed_tools`.
+Kim includes an opt-in, PIN-authenticated remote control plane for the Android/web client. The hosted deployment runs it on the public HTTPS domain; local deployments bind to localhost by default.
 
-1. Create a token and keep it private: `python -c 'import secrets; print(secrets.token_urlsafe(32))'`.
-2. Put it in `.env` as `KIM_REMOTE_TOKEN=...` and set `remote.enabled: true` in `config.yaml`.
-3. Run Kim in voice mode. The API listens on `127.0.0.1:8765` by default.
-4. Use a private authenticated tunnel or reverse proxy for `app.vishalojha.me`; do not expose port 8765 directly to the internet. The DNS record must point to that tunnel/proxy, and TLS must terminate there.
+1. Put a private PIN in `.env` as `KIM_REMOTE_PIN=...`.
+2. Set `remote.enabled: true` for a local deployment, or run `python -m aurora serve` in the hosted container.
+3. Use HTTPS and keep the PIN private. The hosted panel is available at `app.vishalojha.me`.
 
-Endpoints are `GET /healthz`, authenticated `GET /v1/status`, and authenticated `POST /v1/control` with `{"action":"pause"}` or `{"action":"wake"}`. `POST /v1/say` and `POST /v1/tool` are also available; tool calls are restricted to `remote.allowed_tools` and are recorded in `~/.aurora/remote-audit.jsonl`. Keep write tools and shell out of that list until a separate approval UI is implemented.
+Endpoints include authenticated status/control, voice-session, read-only tool, approval list/create/approve/reject, and laptop command relay routes. Approval and command state is persisted separately from the audit log; all remote actions are audited in `~/.aurora/remote-audit.jsonl`.
 
 ## Configuration
 
