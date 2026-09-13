@@ -170,6 +170,7 @@ class KimButton(Gtk.Window):
         item("🎤", "Say...", lambda *_: self.do_say())
         item("⏱", "Status", lambda *_: self.show_status())
         item("⚙", "Self-test", lambda *_: self.do_test())
+        item("↻", "Restart widget", lambda *_: self.do_restart())
         item("✕", "Quit Kim panel", lambda *_: self.do_quit())
         self.pop.add(menu)
         self.pop.show_all()
@@ -293,6 +294,10 @@ class KimButton(Gtk.Window):
 
     def do_quit(self):
         Gtk.main_quit()
+
+    def do_restart(self):
+        self._close_popover()
+        subprocess.Popen(["systemctl", "--user", "restart", "kim-panel.service"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def place(self):
         display = Gdk.Display.get_default()
