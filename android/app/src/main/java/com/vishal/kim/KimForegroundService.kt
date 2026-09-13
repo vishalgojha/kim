@@ -35,7 +35,7 @@ class KimForegroundService : Service() {
         runCatching { client.heartbeat(deviceId); val raw = client.nextDeviceCommand(deviceId); val command = JSONObject(raw.substringAfter(": ")).optJSONObject("command") ?: return; val result = runCatching { act(command.optString("action"), command.optJSONObject("parameters") ?: JSONObject()) }; client.deviceResult(command.optString("id"), command.optString("action"), result.getOrElse { it.message ?: "failed" }, result.isFailure) }
     }
     private fun act(action: String, p: JSONObject): String = when (action) {
-        "open_url" -> { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(p.getString("url")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); "opened" }
+        "open_url" -> { val intent = Intent(Intent.ACTION_VIEW, Uri.parse(p.getString("url"))); intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); startActivity(intent); "opened" }
         "open_app" -> { val intent = packageManager.getLaunchIntentForPackage(p.getString("package")) ?: error("app not installed"); intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); startActivity(intent); "opened" }
         "notify" -> { getSystemService(NotificationManager::class.java).notify(1002, Notification.Builder(this, "kim").setContentTitle("Kim").setContentText(p.optString("text", "Kim notification")).setSmallIcon(android.R.drawable.ic_dialog_info).build()); "notified" }
         "volume" -> { getSystemService(AudioManager::class.java).adjustVolume(if (p.optString("direction") == "down") AudioManager.ADJUST_LOWER else AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI); "changed" }
