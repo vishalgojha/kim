@@ -4,8 +4,13 @@ import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.res.ColorStateList
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.view.View
+import android.view.ViewGroup
 import android.widget.*
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
@@ -47,7 +52,26 @@ class MainActivity : Activity() {
         root.addView(Button(this).apply { text = "Request an action"; setOnClickListener { showRequestDialog() } })
         root.addView(Button(this).apply { text = "Check integrations"; setOnClickListener { refreshIntegrations() } })
         root.addView(Button(this).apply { text = "Stop listening"; setOnClickListener { stopService(Intent(this@MainActivity, KimVoiceService::class.java)) } })
-        setContentView(ScrollView(this).apply { addView(root) })
+        val screen = ScrollView(this).apply { setBackgroundColor(Color.BLACK); addView(root) }
+        theme(screen)
+        setContentView(screen)
+    }
+
+    private fun theme(view: View) {
+        when (view) {
+            is Button -> {
+                view.setTextColor(Color.BLACK)
+                view.background = GradientDrawable().apply { setColor(Color.rgb(237, 237, 237)); cornerRadius = 10f }
+                view.setPadding(18, 12, 18, 12)
+            }
+            is EditText -> {
+                view.setTextColor(Color.rgb(237, 237, 237))
+                view.setHintTextColor(Color.rgb(161, 161, 170))
+                view.backgroundTintList = ColorStateList.valueOf(Color.rgb(82, 82, 91))
+            }
+            is TextView -> view.setTextColor(if (view.textSize >= 22f) Color.rgb(237, 237, 237) else Color.rgb(161, 161, 170))
+        }
+        if (view is ViewGroup) for (i in 0 until view.childCount) theme(view.getChildAt(i))
     }
 
     private fun client() = KimClient(baseUrl, pin.text.toString().trim())

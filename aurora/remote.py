@@ -440,9 +440,7 @@ DASHBOARD_HTML = r"""<!doctype html>
 <html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Kim Control</title>
 <style>
-body{font:16px system-ui;background:#101216;color:#f3f4f6;max-width:680px;margin:0 auto;padding:24px}
-input,textarea,button{font:inherit;border-radius:10px;border:1px solid #374151;padding:12px;background:#181b22;color:inherit;width:100%;box-sizing:border-box;margin:6px 0}
-button{background:#2563eb;border:0;cursor:pointer}button.secondary{background:#374151}.row{display:flex;gap:8px}.row button{flex:1}.card{background:#181b22;padding:16px;border-radius:14px;margin:14px 0}pre{white-space:pre-wrap;overflow:auto;color:#a7f3d0}
+*{box-sizing:border-box}body{font:15px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#000;color:#ededed;max-width:720px;margin:0 auto;padding:28px 20px}h1{letter-spacing:-.04em}h2{font-size:18px;letter-spacing:-.02em}p,small{color:#a1a1aa}input,textarea,button{font:inherit;border-radius:8px;border:1px solid #2e2e2e;padding:12px;background:#0a0a0a;color:#ededed;width:100%;box-sizing:border-box;margin:6px 0}input:focus,textarea:focus{outline:2px solid #737373;outline-offset:1px}button{background:#ededed;color:#000;border:0;cursor:pointer;font-weight:600}button:hover{background:#d4d4d4}button.secondary{background:#1f1f1f;color:#ededed;border:1px solid #3f3f46}.row{display:flex;gap:8px}.row button{flex:1}.card{background:#0a0a0a;border:1px solid #222;padding:18px;border-radius:12px;margin:14px 0}pre{white-space:pre-wrap;overflow:auto;color:#d4d4d8;background:#050505;border-radius:8px;padding:12px;border:1px solid #222}
 </style>
 <body><h1>Kim</h1><p>Private control panel</p>
 <div class="card"><label>Kim PIN</label><input id="pin" type="password" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit PIN"><button onclick="save()">Save PIN</button></div>
