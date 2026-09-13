@@ -38,6 +38,7 @@ class RemoteServer:
         self.host = str(remote.get("host", "127.0.0.1"))
         self.port = int(remote.get("port", 8765))
         self.token = os.environ.get(str(remote.get("token_env", "KIM_REMOTE_TOKEN")), "").strip()
+        self.pin = os.environ.get(str(remote.get("pin_env", "KIM_REMOTE_PIN")), "").strip()
         self.allowed_tools = set(remote.get("allowed_tools", []))
         self.cors_origins = set(remote.get("cors_origins", []))
         self.registry = registry
@@ -52,8 +53,8 @@ class RemoteServer:
         if not self.enabled:
             log.info("remote API disabled")
             return
-        if not self.token:
-            raise RuntimeError("remote.enabled is true but KIM_REMOTE_TOKEN is not set")
+        if not self.pin and not self.token:
+            raise RuntimeError("remote.enabled is true but KIM_REMOTE_PIN is not set")
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -76,6 +77,9 @@ class RemoteServer:
                 self.wfile.write(body)
 
             def _auth(self) -> bool:
+                pin = self.headers.get("X-Kim-Pin", "").strip()
+                if pin and owner.pin:
+                    return hmac.compare_digest(pin, owner.pin)
                 supplied = self.headers.get("Authorization", "")
                 token = supplied.removeprefix("Bearer ").strip()
                 return bool(token) and hmac.compare_digest(token, owner.token)
@@ -92,7 +96,7 @@ class RemoteServer:
                 if origin in owner.cors_origins:
                     self.send_header("Access-Control-Allow-Origin", origin)
                     self.send_header("Vary", "Origin")
-                self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+                self.send_header("Access-Control-Allow-Headers", "Authorization, X-Kim-Pin, Content-Type")
                 self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
                 self.end_headers()
 
@@ -170,8 +174,8 @@ class RemoteServer:
         log.info("remote API listening on %s:%s", self.host, self.port)
 
     def _check(self, handler: BaseHTTPRequestHandler) -> bool:
-        if not self.token:
-            handler._reply(503, {"error": "remote token is not configured"})  # type: ignore[attr-defined]
+        if not self.pin and not self.token:
+            handler._reply(503, {"error": "remote PIN is not configured"})  # type: ignore[attr-defined]
             return False
         if not handler._auth():  # type: ignore[attr-defined]
             handler._reply(401, {"error": "missing or invalid bearer token"})  # type: ignore[attr-defined]
@@ -215,13 +219,13 @@ input,textarea,button{font:inherit;border-radius:10px;border:1px solid #374151;p
 button{background:#2563eb;border:0;cursor:pointer}button.secondary{background:#374151}.row{display:flex;gap:8px}.row button{flex:1}.card{background:#181b22;padding:16px;border-radius:14px;margin:14px 0}pre{white-space:pre-wrap;overflow:auto;color:#a7f3d0}
 </style>
 <body><h1>Kim</h1><p>Private control panel</p>
-<div class="card"><label>Remote token</label><input id="token" type="password" placeholder="Paste KIM_REMOTE_TOKEN"><button onclick="save()">Save token</button></div>
+<div class="card"><label>Kim PIN</label><input id="pin" type="password" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit PIN"><button onclick="save()">Save PIN</button></div>
 <div class="card"><h2>Status</h2><pre id="status">Not connected</pre><button onclick="status()">Refresh status</button><div class="row"><button class="secondary" onclick="control('pause')">Pause</button><button onclick="control('wake')">Wake</button></div></div>
 <div class="card"><h2>Run approved diagnostic</h2><input id="name" value="system_info"><textarea id="params" rows="3">{}</textarea><button onclick="runTool()">Run</button><pre id="result"></pre></div>
 <script>
-const key='kim-token'; document.querySelector('#token').value=localStorage.getItem(key)||'';
-function save(){localStorage.setItem(key,document.querySelector('#token').value);status()}
-async function call(path,opts={}){opts.headers=Object.assign({'Authorization':'Bearer '+document.querySelector('#token').value,'Content-Type':'application/json'},opts.headers||{});const r=await fetch(path,opts);const j=await r.json();if(!r.ok)throw Error(j.error||JSON.stringify(j));return j}
+const key='kim-pin'; document.querySelector('#pin').value=localStorage.getItem(key)||'';
+function save(){localStorage.setItem(key,document.querySelector('#pin').value);status()}
+async function call(path,opts={}){opts.headers=Object.assign({'X-Kim-Pin':document.querySelector('#pin').value,'Content-Type':'application/json'},opts.headers||{});const r=await fetch(path,opts);const j=await r.json();if(!r.ok)throw Error(j.error||JSON.stringify(j));return j}
 async function status(){try{document.querySelector('#status').textContent=JSON.stringify(await call('/v1/status'),null,2)}catch(e){document.querySelector('#status').textContent=e}}
 async function control(action){try{document.querySelector('#result').textContent=JSON.stringify(await call('/v1/control',{method:'POST',body:JSON.stringify({action})}),null,2)}catch(e){document.querySelector('#result').textContent=e}}
 async function runTool(){try{const parameters=JSON.parse(document.querySelector('#params').value||'{}');document.querySelector('#result').textContent=JSON.stringify(await call('/v1/tool',{method:'POST',body:JSON.stringify({name:document.querySelector('#name').value,parameters})}),null,2)}catch(e){document.querySelector('#result').textContent=e}}

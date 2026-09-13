@@ -77,6 +77,7 @@ DEFAULTS: Dict[str, Any] = {
         "host": "127.0.0.1",
         "port": 8765,
         "token_env": "KIM_REMOTE_TOKEN",
+        "pin_env": "KIM_REMOTE_PIN",
         "domain": "app.vishalojha.me",
         "cors_origins": ["https://app.vishalojha.me"],
         "audit_path": "~/.aurora/remote-audit.jsonl",
