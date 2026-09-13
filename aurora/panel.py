@@ -38,7 +38,7 @@ class KimButton(Gtk.Window):
         self.set_skip_taskbar_hint(False)
         self.set_keep_above(True)
         self.set_resizable(False)
-        self.set_default_size(150, 42)
+        self.set_default_size(130, 42)
         self.set_position(Gtk.WindowPosition.NONE)
         screen = Gdk.Screen.get_default()
         if screen:
@@ -65,9 +65,9 @@ class KimButton(Gtk.Window):
             padding: 3px;
         }
         #kim-orb {
-            background-color: #343bff;
-            border: 2px solid #a5afff;
-            border-radius: 14px;
+            background-color: transparent;
+            border: 0;
+            border-radius: 0;
             min-width: 28px;
             min-height: 28px;
         }
@@ -308,7 +308,7 @@ class KimButton(Gtk.Window):
             self.show_all()
             return
         geo = monitor.get_geometry()
-        w, h = 150, 42
+        w, h = 130, 42
         self.move(geo.x + (geo.width - w) // 2, geo.y + 38)
         self.show_all()
 
