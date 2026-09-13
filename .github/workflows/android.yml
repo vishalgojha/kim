@@ -1,5 +1,8 @@
 name: Build Kim Android
 
+permissions:
+  contents: write
+
 on:
   workflow_dispatch:
   push:
@@ -27,3 +30,9 @@ jobs:
         with:
           name: kim-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Publish direct APK download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view kim-latest >/dev/null 2>&1 || gh release create kim-latest --title "Kim latest Android APK" --notes "Debug APK build from the latest main commit." --prerelease
+          gh release upload kim-latest app/build/outputs/apk/debug/app-debug.apk --clobber
