@@ -222,7 +222,7 @@ class RemoteServer:
                             record["status"] = "approved" if action == "approve" else "rejected"
                             owner._persist_state()
                         if action == "approve":
-                            if record["name"] in owner.direct_tools:
+                            if record["name"] in owner.direct_tools and owner._can_execute_direct(record["name"]):
                                 result, is_error = owner._run(owner.registry.run(record["name"], record["parameters"]))
                                 with owner.approvals_lock:
                                     record["status"] = "failed" if is_error else "completed"
@@ -295,6 +295,14 @@ class RemoteServer:
                 self.commands = [v for v in commands if isinstance(v, dict)]
         except (OSError, json.JSONDecodeError):
             return
+
+    def _can_execute_direct(self, name: str) -> bool:
+        """Only use cloud execution when that connector's secret is present."""
+        if name in {"gmail_send", "calendar_create", "gmail_search", "gmail_read", "calendar_upcoming"}:
+            return bool(os.environ.get("GOOGLE_TOKEN_JSON", "").strip())
+        if name == "whatsapp_send":
+            return bool(os.environ.get("WHATSAPP_CLOUD_API_TOKEN", "").strip() and os.environ.get("WHATSAPP_CLOUD_PHONE_NUMBER_ID", "").strip())
+        return True
 
     def _persist_state(self) -> None:
         """Atomically persist queue state without putting it in the audit log."""
