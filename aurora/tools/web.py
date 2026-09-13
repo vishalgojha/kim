@@ -1,4 +1,5 @@
 import html
+import os
 import re
 from urllib.parse import quote_plus
 
@@ -28,6 +29,15 @@ def _strip_tags(text: str) -> str:
     timeout=30,
 )
 def web_search(query: str, limit: int = 5) -> str:
+    searxng = os.environ.get("SEARXNG_URL", "").strip().rstrip("/")
+    if searxng:
+        try:
+            response = httpx.get(f"{searxng}/search", params={"q": query, "format": "json", "categories": "general"}, headers=_HEADERS, timeout=20)
+            data = response.json()
+            rows = [f"- {item.get('title', '(untitled)')}\\n  {item.get('url', '')}\\n  {item.get('content', '')}" for item in data.get("results", [])[:max(1, min(int(limit), 20))]]
+            return "\\n".join(rows) if rows else "no results"
+        except Exception as e:
+            return f"private search failed: {e}"
     try:
         r = httpx.get(
             f"https://html.duckduckgo.com/html/?q={quote_plus(query)}",
