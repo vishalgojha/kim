@@ -92,6 +92,17 @@ Everything runs under a policy in `config.yaml`:
 - `ask_for` — commands like `sudo` / `apt` need a **verbal "yes"** from you; the agent asks, you confirm, then it retries with `confirm: yes`. It will never retry without your confirmation.
 - `default: allow` — everything else runs. Tighten it by listing prefixes, or flip to a deny-by-default mode by moving tools out (ask before changing defaults).
 
+## Phone and web control
+
+Kim includes an opt-in, authenticated remote control plane for a phone/web client. It is disabled by default and only exposes the read-only tools listed in `remote.allowed_tools`.
+
+1. Create a token and keep it private: `python -c 'import secrets; print(secrets.token_urlsafe(32))'`.
+2. Put it in `.env` as `KIM_REMOTE_TOKEN=...` and set `remote.enabled: true` in `config.yaml`.
+3. Run Kim in voice mode. The API listens on `127.0.0.1:8765` by default.
+4. Use a private authenticated tunnel or reverse proxy for `app.vishalojha.me`; do not expose port 8765 directly to the internet. The DNS record must point to that tunnel/proxy, and TLS must terminate there.
+
+Endpoints are `GET /healthz`, authenticated `GET /v1/status`, and authenticated `POST /v1/control` with `{"action":"pause"}` or `{"action":"wake"}`. `POST /v1/say` and `POST /v1/tool` are also available; tool calls are restricted to `remote.allowed_tools` and are recorded in `~/.aurora/remote-audit.jsonl`. Keep write tools and shell out of that list until a separate approval UI is implemented.
+
 ## Configuration
 
 Everything lives in `config.yaml` (created from built-in defaults on first run):

@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import logging
+import os
 import signal
 import sys
 from typing import Any, Dict, Optional
@@ -16,6 +17,8 @@ from .tools import REGISTRY
 from .tools.context import Notifier, get_ctx, set_speaker
 from .watcher import Watcher
 from .host import install_autostart
+from .remote import RemoteServer
+from pathlib import Path
 
 log = get_logger("aurora")
 
@@ -78,6 +81,8 @@ async def run_voice(cfg: Dict[str, Any]) -> None:
 
     watcher = Watcher(cfg, notifier)
     session = RealtimeSession(cfg, eleven, REGISTRY, capture, output)
+    remote = RemoteServer(cfg, REGISTRY, asyncio.get_running_loop(), Path.home() / ".aurora" / "voice_command", speaker.speak)
+    remote.start()
 
     tasks = [
         asyncio.create_task(session.run_forever(), name="voice"),
@@ -103,6 +108,7 @@ async def run_voice(cfg: Dict[str, Any]) -> None:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         await speaker.stop()
+        remote.stop()
         await capture.stop()
         await output.close()
 
@@ -121,6 +127,31 @@ async def run_watch(cfg: Dict[str, Any]) -> None:
         await speaker.stop()
         await capture.stop()
         await output.close()
+
+
+async def run_remote(cfg: Dict[str, Any]) -> None:
+    """Run Kim's headless authenticated API for a server/container deployment."""
+    cfg = dict(cfg)
+    cfg["remote"] = dict(cfg.get("remote") or {})
+    cfg["remote"].update({
+        "enabled": True,
+        "host": os.environ.get("KIM_REMOTE_HOST", "0.0.0.0"),
+        "port": int(os.environ.get("KIM_PORT", cfg["remote"].get("port", 3000))),
+    })
+    _build_context(cfg)
+    remote = RemoteServer(cfg, REGISTRY, asyncio.get_running_loop(), Path.home() / ".aurora" / "voice_command")
+    remote.start()
+    stop_ev = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, stop_ev.set)
+        except (NotImplementedError, RuntimeError):
+            pass
+    try:
+        await stop_ev.wait()
+    finally:
+        remote.stop()
 
 
 async def run_selftest(cfg: Dict[str, Any]) -> int:
@@ -174,7 +205,7 @@ def run_wake() -> int:
 
 def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(prog="kim", description="Kim: an ElevenLabs-voiced agentic laptop assistant")
-    ap.add_argument("mode", nargs="?", default="voice", choices=["voice", "watch", "setup", "test", "say", "wake", "install"])
+    ap.add_argument("mode", nargs="?", default="voice", choices=["voice", "watch", "serve", "setup", "test", "say", "wake", "install"])
     ap.add_argument("text", nargs="*", help="for 'say': the words to speak aloud")
     ap.add_argument("--config", default=None, help="path to config.yaml")
     ap.add_argument("--reset-agent", action="store_true", help="force-recreate the ElevenLabs agent")
@@ -217,6 +248,14 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if args.mode == "test":
         return asyncio.run(run_selftest(cfg))
+
+    if args.mode == "serve":
+        try:
+            asyncio.run(run_remote(cfg))
+        except Exception as e:  # noqa: BLE001
+            log.error("remote server failed: %s", e)
+            return 1
+        return 0
 
     try:
         ensure_agent(cfg, ElevenAPI(cfg), reset=args.reset_agent)
