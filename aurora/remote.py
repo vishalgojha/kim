@@ -15,6 +15,7 @@ import os
 import secrets
 import threading
 import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Optional
@@ -46,6 +47,8 @@ class RemoteServer:
         self.control_path = control_path
         self.speak = speak
         self.audit_path = Path(str(remote.get("audit_path", "~/.aurora/remote-audit.jsonl"))).expanduser()
+        self.approvals: Dict[str, Dict[str, Any]] = {}
+        self.approvals_lock = threading.Lock()
         self.server: Optional[ThreadingHTTPServer] = None
         self.thread: Optional[threading.Thread] = None
 
@@ -117,6 +120,11 @@ class RemoteServer:
                         state = "offline"
                     self._reply(200, {"ok": True, "voice_state": state, "allowed_tools": sorted(owner.allowed_tools)})
                     return
+                if self.path == "/v1/approvals":
+                    with owner.approvals_lock:
+                        items = [dict(v, parameters=None) for v in owner.approvals.values()]
+                    self._reply(200, {"ok": True, "approvals": items})
+                    return
                 self._reply(404, {"error": "not found"})
 
             def _dashboard(self) -> None:
@@ -160,6 +168,39 @@ class RemoteServer:
                         result, is_error = owner._run(owner.registry.run(name, data.get("parameters", {})))
                         owner._audit("tool", {"name": name, "error": is_error}, not is_error)
                         self._reply(500 if is_error else 200, {"ok": not is_error, "result": result})
+                        return
+                    if self.path == "/v1/approvals":
+                        name = str(data.get("name", ""))
+                        if name not in owner.registry.names():
+                            raise ValueError("unknown tool")
+                        approval_id = uuid.uuid4().hex
+                        record = {"id": approval_id, "name": name, "parameters": data.get("parameters", {}), "summary": str(data.get("summary", name))[:500], "status": "pending", "created_at": time.time()}
+                        with owner.approvals_lock:
+                            owner.approvals[approval_id] = record
+                        owner._audit("approval_requested", {"id": approval_id, "name": name}, True)
+                        self._reply(202, {"ok": True, "approval": {k: v for k, v in record.items() if k != "parameters"}})
+                        return
+                    if self.path.startswith("/v1/approvals/"):
+                        approval_id, action = self.path.removeprefix("/v1/approvals/").split("/", 1)
+                        if action not in {"approve", "reject"}:
+                            self._reply(400, {"error": "action must be approve or reject"})
+                            return
+                        with owner.approvals_lock:
+                            record = owner.approvals.get(approval_id)
+                            if not record:
+                                self._reply(404, {"error": "approval not found"})
+                                return
+                            if record["status"] != "pending":
+                                self._reply(409, {"error": "approval already resolved"})
+                                return
+                            record["status"] = "approved" if action == "approve" else "rejected"
+                        if action == "approve":
+                            result, is_error = owner._run(owner.registry.run(record["name"], record["parameters"]))
+                            owner._audit("approval_executed", {"id": approval_id, "name": record["name"], "error": is_error}, not is_error)
+                            self._reply(500 if is_error else 200, {"ok": not is_error, "result": result})
+                        elif action == "reject":
+                            owner._audit("approval_rejected", {"id": approval_id, "name": record["name"]}, True)
+                            self._reply(200, {"ok": True, "status": "rejected"})
                         return
                     self._reply(404, {"error": "not found"})
                 except (ValueError, json.JSONDecodeError) as exc:
@@ -222,6 +263,7 @@ button{background:#2563eb;border:0;cursor:pointer}button.secondary{background:#3
 <div class="card"><label>Kim PIN</label><input id="pin" type="password" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit PIN"><button onclick="save()">Save PIN</button></div>
 <div class="card"><h2>Status</h2><pre id="status">Not connected</pre><button onclick="status()">Refresh status</button><div class="row"><button class="secondary" onclick="control('pause')">Pause</button><button onclick="control('wake')">Wake</button></div></div>
 <div class="card"><h2>Run approved diagnostic</h2><input id="name" value="system_info"><textarea id="params" rows="3">{}</textarea><button onclick="runTool()">Run</button><pre id="result"></pre></div>
+<div class="card"><h2>Approvals</h2><button onclick="approvals()">Refresh approvals</button><pre id="approvals">None loaded</pre></div>
 <script>
 const key='kim-pin'; document.querySelector('#pin').value=localStorage.getItem(key)||'';
 function save(){localStorage.setItem(key,document.querySelector('#pin').value);status()}
@@ -229,4 +271,5 @@ async function call(path,opts={}){opts.headers=Object.assign({'X-Kim-Pin':docume
 async function status(){try{document.querySelector('#status').textContent=JSON.stringify(await call('/v1/status'),null,2)}catch(e){document.querySelector('#status').textContent=e}}
 async function control(action){try{document.querySelector('#result').textContent=JSON.stringify(await call('/v1/control',{method:'POST',body:JSON.stringify({action})}),null,2)}catch(e){document.querySelector('#result').textContent=e}}
 async function runTool(){try{const parameters=JSON.parse(document.querySelector('#params').value||'{}');document.querySelector('#result').textContent=JSON.stringify(await call('/v1/tool',{method:'POST',body:JSON.stringify({name:document.querySelector('#name').value,parameters})}),null,2)}catch(e){document.querySelector('#result').textContent=e}}
+async function approvals(){try{document.querySelector('#approvals').textContent=JSON.stringify(await call('/v1/approvals'),null,2)}catch(e){document.querySelector('#approvals').textContent=e}}
 </script></body></html>"""

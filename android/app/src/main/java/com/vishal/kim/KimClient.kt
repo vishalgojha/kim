@@ -5,7 +5,9 @@ import java.net.URL
 
 class KimClient(private val baseUrl: String, private val token: String) {
     fun getStatus(): String = request("GET", "/v1/status")
+    fun getApprovals(): String = request("GET", "/v1/approvals")
     fun control(action: String): String = request("POST", "/v1/control", "{\"action\":\"$action\"}")
+    fun approve(id: String): String = request("POST", "/v1/approvals/$id/approve", "{}")
 
     private fun request(method: String, path: String, body: String? = null): String {
         val connection = (URL(baseUrl.trimEnd('/') + path).openConnection() as HttpURLConnection)

@@ -36,12 +36,14 @@ class MainActivity : Activity() {
         row.addView(Button(this).apply { text = "Wake"; setOnClickListener { control("wake") } }, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(row)
         root.addView(Button(this).apply { text = "Start listening service"; setOnClickListener { startListening() } })
+        root.addView(Button(this).apply { text = "Refresh approvals"; setOnClickListener { refreshApprovals() } })
         setContentView(root)
     }
 
     private fun client() = KimClient(baseUrl, token.text.toString().trim())
     private fun refresh() { executor.execute { val value = runCatching { client().getStatus() }.getOrElse { it.message ?: "connection failed" }; runOnUiThread { status.text = value } } }
     private fun control(action: String) { executor.execute { val value = runCatching { client().control(action) }.getOrElse { it.message ?: "request failed" }; runOnUiThread { status.text = value } } }
+    private fun refreshApprovals() { executor.execute { val value = runCatching { client().getApprovals() }.getOrElse { it.message ?: "request failed" }; runOnUiThread { status.text = value } } }
     private fun startListening() {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 5)
         else startForegroundService(Intent(this, KimForegroundService::class.java))
