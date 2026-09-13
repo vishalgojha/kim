@@ -10,4 +10,11 @@ object KimPrefs {
         val key = MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
         return EncryptedSharedPreferences.create(context, "kim", key, EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV, EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
     }
+
+    fun deviceId(context: Context): String {
+        val prefs = open(context)
+        return prefs.getString("device_id", null) ?: java.util.UUID.randomUUID().toString().also {
+            prefs.edit().putString("device_id", it).apply()
+        }
+    }
 }
