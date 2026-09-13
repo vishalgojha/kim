@@ -1,7 +1,10 @@
-"""Read-only adapter for lharries/whatsapp-mcp's local message database."""
+"""WhatsApp tools backed by the local bridge and read-only message database."""
 
+import json
 import os
 import sqlite3
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from .context import get_ctx
@@ -95,3 +98,47 @@ def whatsapp_chats(query: str = "") -> str:
             (f"%{query}%", f"%{query}%"),
         )
     return _rows("SELECT jid, name, last_message_time FROM chats ORDER BY last_message_time DESC LIMIT 100")
+
+
+@tool(
+    "whatsapp_send",
+    "Send a WhatsApp message through the local WhatsApp bridge. Always show the recipient and message and get explicit confirmation before calling with confirm='yes'.",
+    {
+        "recipient": {"type": "string", "description": "phone number with country code or WhatsApp recipient JID", "required": True},
+        "message": {"type": "string", "description": "message text", "required": True},
+        "confirm": {"type": "string", "description": "must be yes after Vishal explicitly confirms sending", "required": False},
+    },
+    timeout=30,
+)
+def whatsapp_send(recipient: str, message: str, confirm: str = "") -> str:
+    recipient = recipient.strip()
+    message = message.strip()
+    if not recipient:
+        return "Recipient is required."
+    if not message:
+        return "Message is required."
+    if len(recipient) > 120 or len(message) > 10_000:
+        return "Recipient or message is too long."
+    if confirm.strip().lower() != "yes":
+        return f"Sending is paused for confirmation. Draft recipient={recipient}, message_length={len(message)}. Ask Vishal to confirm, then retry with confirm='yes'."
+
+    base = os.environ.get("WHATSAPP_API_BASE_URL", "http://127.0.0.1:8080/api").rstrip("/")
+    request = urllib.request.Request(
+        f"{base}/send",
+        data=json.dumps({"recipient": recipient, "message": message}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        if not payload.get("success"):
+            return f"WhatsApp bridge rejected the message: {payload.get('message', 'unknown error')}"
+        return str(payload.get("message", f"Message sent to {recipient}"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:500]
+        return f"WhatsApp bridge HTTP {exc.code}: {detail}"
+    except (urllib.error.URLError, TimeoutError) as exc:
+        return f"WhatsApp bridge is unavailable at {base}: {exc}"
+    except (json.JSONDecodeError, OSError) as exc:
+        return f"WhatsApp bridge response error: {exc}"

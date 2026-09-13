@@ -249,7 +249,7 @@ class RemoteServer:
             handler._reply(503, {"error": "remote PIN is not configured"})  # type: ignore[attr-defined]
             return False
         if not handler._auth():  # type: ignore[attr-defined]
-            handler._reply(401, {"error": "missing or invalid bearer token"})  # type: ignore[attr-defined]
+            handler._reply(401, {"error": "missing or invalid PIN"})  # type: ignore[attr-defined]
             return False
         return True
 
@@ -293,7 +293,7 @@ button{background:#2563eb;border:0;cursor:pointer}button.secondary{background:#3
 <div class="card"><label>Kim PIN</label><input id="pin" type="password" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit PIN"><button onclick="save()">Save PIN</button></div>
 <div class="card"><h2>Status</h2><pre id="status">Not connected</pre><button onclick="status()">Refresh status</button><div class="row"><button class="secondary" onclick="control('pause')">Pause</button><button onclick="control('wake')">Wake</button></div></div>
 <div class="card"><h2>Run approved diagnostic</h2><input id="name" value="system_info"><textarea id="params" rows="3">{}</textarea><button onclick="runTool()">Run</button><pre id="result"></pre></div>
-<div class="card"><h2>Approvals</h2><button onclick="approvals()">Refresh approvals</button><pre id="approvals">None loaded</pre></div>
+<div class="card"><h2>Approvals</h2><button onclick="approvals()">Refresh approvals</button><div id="approvals">None loaded</div></div>
 <script>
 const key='kim-pin'; document.querySelector('#pin').value=localStorage.getItem(key)||'';
 function save(){localStorage.setItem(key,document.querySelector('#pin').value);status()}
@@ -301,5 +301,5 @@ async function call(path,opts={}){opts.headers=Object.assign({'X-Kim-Pin':docume
 async function status(){try{document.querySelector('#status').textContent=JSON.stringify(await call('/v1/status'),null,2)}catch(e){document.querySelector('#status').textContent=e}}
 async function control(action){try{document.querySelector('#result').textContent=JSON.stringify(await call('/v1/control',{method:'POST',body:JSON.stringify({action})}),null,2)}catch(e){document.querySelector('#result').textContent=e}}
 async function runTool(){try{const parameters=JSON.parse(document.querySelector('#params').value||'{}');document.querySelector('#result').textContent=JSON.stringify(await call('/v1/tool',{method:'POST',body:JSON.stringify({name:document.querySelector('#name').value,parameters})}),null,2)}catch(e){document.querySelector('#result').textContent=e}}
-async function approvals(){try{document.querySelector('#approvals').textContent=JSON.stringify(await call('/v1/approvals'),null,2)}catch(e){document.querySelector('#approvals').textContent=e}}
+async function approvals(){try{const data=await call('/v1/approvals');const box=document.querySelector('#approvals');box.innerHTML='';for(const a of data.approvals){const row=document.createElement('div');row.className='card';row.innerHTML='<b>'+a.name+'</b><br><small>'+a.summary+'</small><br><small>Status: '+a.status+'</small>';if(a.status==='pending'){for(const action of ['approve','reject']){const b=document.createElement('button');b.textContent=action[0].toUpperCase()+action.slice(1);b.className=action==='reject'?'secondary':'';b.onclick=async()=>{await call('/v1/approvals/'+a.id+'/'+action,{method:'POST',body:'{}'});approvals()};row.appendChild(b)}}box.appendChild(row)}}catch(e){document.querySelector('#approvals').textContent=e}}
 </script></body></html>"""
