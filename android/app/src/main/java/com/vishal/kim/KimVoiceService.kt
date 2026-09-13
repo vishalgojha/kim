@@ -53,7 +53,9 @@ class KimVoiceService : Service() {
                     val bytes = Base64.decode(encoded, Base64.DEFAULT)
                     player?.write(bytes, 0, bytes.size)
                 }
-                if (json.optString("type") == "client_tool_call") handleToolCall(json)
+                if (json.optString("type") == "client_tool_call") {
+                    handleToolCall(json.optJSONObject("client_tool_call") ?: json)
+                }
             } catch (_: Exception) { }
         }
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { stopSelf() }
