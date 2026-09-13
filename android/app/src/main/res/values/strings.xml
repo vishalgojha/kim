@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Kim</string>
+    <string name="kim_accessibility_description">Allows Kim to perform actions you explicitly approve.</string>
+</resources>
