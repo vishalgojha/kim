@@ -33,19 +33,16 @@ class MainActivity : Activity() {
         scheduleApprovalWatcher()
         if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 6)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 38, 24, 28) }
+        pin = EditText(this).apply { setText(prefs.getString("pin", "")) }
         TextView(this).apply { text = "Kim"; textSize = 36f }.also(root::addView)
         TextView(this).apply { text = "Good to see you. What can I take care of?"; textSize = 18f; setPadding(0, 4, 0, 24) }.also(root::addView)
-        pin = EditText(this).apply { hint = "Kim PIN"; setText(prefs.getString("pin", "")); inputType = 0x81; maxLines = 1 }
-        root.addView(pin)
-        val save = Button(this).apply { text = "Connect phone to Kim"; setOnClickListener { prefs.edit().putString("pin", pin.text.toString()).apply(); startDeviceBridge(); refresh() } }
-        root.addView(save)
-        status = TextView(this).apply { text = "Not connected"; textSize = 16f; setPadding(0, 16, 0, 16) }
+        status = TextView(this).apply { text = "Ready when you are"; textSize = 15f; setPadding(0, 12, 0, 12) }
         root.addView(status)
         root.addView(Button(this).apply { text = "Talk to Kim"; setOnClickListener { startListening() } })
         root.addView(TextView(this).apply { text = "Try asking"; textSize = 21f; setPadding(0, 20, 0, 8) })
         root.addView(Button(this).apply { text = "Show me today's priorities"; setOnClickListener { runQuickAction("gmail_today", "Checking your day…") } })
         root.addView(Button(this).apply { text = "What's on my calendar?"; setOnClickListener { runQuickAction("calendar_upcoming", "Checking your calendar…") } })
-        root.addView(Button(this).apply { text = "Help me send an email"; setOnClickListener { showRequestDialog() } })
+        root.addView(Button(this).apply { text = "Help me send an email"; setOnClickListener { showEmailDialog() } })
         root.addView(TextView(this).apply { text = "Requests"; textSize = 21f; setPadding(0, 20, 0, 8) })
         approvalsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(approvalsBox)
@@ -54,7 +51,7 @@ class MainActivity : Activity() {
         val screen = ScrollView(this).apply { setBackgroundColor(Color.BLACK); addView(root) }
         theme(screen)
         setContentView(screen)
-        if (pin.text.isNullOrBlank()) showSettings()
+        if (prefs.getString("pin", "").isNullOrBlank()) showSettings()
     }
 
     private fun runQuickAction(name: String, label: String) {
@@ -72,6 +69,18 @@ class MainActivity : Activity() {
         form.addView(Button(this).apply { text = "Notification access"; setOnClickListener { startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")) } })
         form.addView(Button(this).apply { text = "Accessibility controls"; setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } })
         AlertDialog.Builder(this).setTitle("Kim settings").setView(form).setNegativeButton("Close", null).show()
+    }
+
+    private fun showEmailDialog() {
+        val form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 0, 24, 0) }
+        val to = EditText(this).apply { hint = "To"; inputType = android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS }
+        val subject = EditText(this).apply { hint = "Subject" }
+        val body = EditText(this).apply { hint = "Message"; minLines = 5; gravity = android.view.Gravity.TOP }
+        form.addView(to); form.addView(subject); form.addView(body)
+        AlertDialog.Builder(this).setTitle("Prepare an email").setView(form).setNegativeButton("Cancel", null).setPositiveButton("Ask Kim to send") { _, _ ->
+            val params = JSONObject().put("to", to.text.toString()).put("subject", subject.text.toString()).put("body", body.text.toString())
+            requestApproval("gmail_send", params.toString(), "Send email to ${to.text}")
+        }.show()
     }
 
     private fun theme(view: View) {
