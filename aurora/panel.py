@@ -59,8 +59,8 @@ class KimButton(Gtk.Window):
             border-radius: 18px;
         }
         #kim-orb-shell {
-            background-color: rgba(46, 54, 150, 0.45);
-            border: 1px solid rgba(151, 160, 255, 0.65);
+            background-color: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(210, 210, 220, 0.35);
             border-radius: 16px;
             padding: 3px;
         }
