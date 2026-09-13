@@ -38,7 +38,7 @@ class KimButton(Gtk.Window):
         self.set_skip_taskbar_hint(False)
         self.set_keep_above(True)
         self.set_resizable(False)
-        self.set_default_size(300, 72)
+        self.set_default_size(220, 58)
         self.set_position(Gtk.WindowPosition.NONE)
         screen = Gdk.Screen.get_default()
         if screen:
@@ -68,8 +68,8 @@ class KimButton(Gtk.Window):
             background-color: #343bff;
             border: 2px solid #a5afff;
             border-radius: 14px;
-            min-width: 48px;
-            min-height: 48px;
+            min-width: 38px;
+            min-height: 38px;
         }
         #kim-orb.active {
             background-color: #693cff;
@@ -96,19 +96,19 @@ class KimButton(Gtk.Window):
         self.drag_handle = Gtk.EventBox()
         self.drag_handle.add(Gtk.Label(label="⠿"))
         self.drag_handle.set_tooltip_text("Drag Kim anywhere")
-        self.drag_handle.set_size_request(14, 56)
+        self.drag_handle.set_size_request(10, 42)
         self.drag_handle.connect("button-press-event", self._start_drag)
         self.orb_row.pack_start(self.drag_handle, False, False, 0)
 
         self.shell = Gtk.EventBox()
         self.shell.set_name("kim-orb-shell")
-        self.shell.set_size_request(58, 58)
+        self.shell.set_size_request(46, 46)
 
         self.btn = Gtk.EventBox()
         self.btn.set_name("kim-orb")
         self.orb_image = Gtk.Image.new_from_file(str(ORB_ASSET))
         self.btn.add(self.orb_image)
-        self.btn.set_size_request(50, 50)
+        self.btn.set_size_request(40, 40)
         self.shell.add(self.btn)
         self.orb_row.pack_start(self.shell, True, True, 0)
         self.btn.connect("button-press-event", self.on_clicked)
@@ -300,7 +300,7 @@ class KimButton(Gtk.Window):
             self.show_all()
             return
         geo = monitor.get_geometry()
-        w, h = 300, 72
+        w, h = 220, 58
         self.move(geo.x + (geo.width - w) // 2, geo.y + 38)
         self.show_all()
 
