@@ -131,10 +131,18 @@ async def _remote_command_loop(cfg: Dict[str, Any]) -> None:
             try:
                 response = await client.get(f"https://{domain}/v1/commands/next", headers={"X-Kim-Pin": pin})
                 if response.is_success:
-                    action = (response.json() or {}).get("action")
-                    if action in {"pause", "wake"}:
+                    command = (response.json() or {}).get("command") or {}
+                    action = command.get("action")
+                    if command.get("type") == "control" and action in {"pause", "wake"}:
                         command_path.parent.mkdir(parents=True, exist_ok=True)
                         command_path.write_text(action)
+                    elif command.get("type") == "tool":
+                        result, is_error = await REGISTRY.run(command.get("name", ""), command.get("parameters", {}))
+                        await client.post(
+                            f"https://{domain}/v1/commands/{command.get('approval_id', '')}/result",
+                            headers={"X-Kim-Pin": pin},
+                            json={"result": result, "is_error": is_error},
+                        )
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001

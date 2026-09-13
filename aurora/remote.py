@@ -51,7 +51,7 @@ class RemoteServer:
         self.audit_path = Path(str(remote.get("audit_path", "~/.aurora/remote-audit.jsonl"))).expanduser()
         self.approvals: Dict[str, Dict[str, Any]] = {}
         self.approvals_lock = threading.Lock()
-        self.commands: list[str] = []
+        self.commands: list[Dict[str, Any]] = []
         self.commands_lock = threading.Lock()
         self.server: Optional[ThreadingHTTPServer] = None
         self.thread: Optional[threading.Thread] = None
@@ -131,8 +131,8 @@ class RemoteServer:
                     return
                 if self.path == "/v1/commands/next":
                     with owner.commands_lock:
-                        action = owner.commands.pop(0) if owner.commands else None
-                    self._reply(200, {"ok": True, "action": action})
+                        command = owner.commands.pop(0) if owner.commands else None
+                    self._reply(200, {"ok": True, "command": command})
                     return
                 if self.path == "/v1/voice/session":
                     if owner.voice_url is None:
@@ -163,7 +163,7 @@ class RemoteServer:
                         owner.control_path.parent.mkdir(parents=True, exist_ok=True)
                         owner.control_path.write_text(action)
                         with owner.commands_lock:
-                            owner.commands.append(action)
+                            owner.commands.append({"type": "control", "action": action})
                         owner._audit("control", {"action": action}, True)
                         self._reply(200, {"ok": True, "action": action})
                         return
@@ -212,12 +212,25 @@ class RemoteServer:
                                 return
                             record["status"] = "approved" if action == "approve" else "rejected"
                         if action == "approve":
-                            result, is_error = owner._run(owner.registry.run(record["name"], record["parameters"]))
-                            owner._audit("approval_executed", {"id": approval_id, "name": record["name"], "error": is_error}, not is_error)
-                            self._reply(500 if is_error else 200, {"ok": not is_error, "result": result})
+                            with owner.commands_lock:
+                                owner.commands.append({"type": "tool", "approval_id": approval_id, "name": record["name"], "parameters": record["parameters"]})
+                            owner._audit("approval_queued", {"id": approval_id, "name": record["name"]}, True)
+                            self._reply(202, {"ok": True, "status": "approved_queued", "approval_id": approval_id})
                         elif action == "reject":
                             owner._audit("approval_rejected", {"id": approval_id, "name": record["name"]}, True)
                             self._reply(200, {"ok": True, "status": "rejected"})
+                        return
+                    if self.path.startswith("/v1/commands/") and self.path.endswith("/result"):
+                        approval_id = self.path.removeprefix("/v1/commands/").removesuffix("/result").strip("/")
+                        with owner.approvals_lock:
+                            record = owner.approvals.get(approval_id)
+                            if not record:
+                                self._reply(404, {"error": "approval not found"})
+                                return
+                            record["status"] = "failed" if data.get("is_error") else "completed"
+                            record["result"] = str(data.get("result", ""))[:20_000]
+                        owner._audit("approval_result", {"id": approval_id, "name": record["name"], "error": bool(data.get("is_error"))}, not data.get("is_error"))
+                        self._reply(200, {"ok": True, "status": record["status"]})
                         return
                     self._reply(404, {"error": "not found"})
                 except (ValueError, json.JSONDecodeError) as exc:
