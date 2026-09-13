@@ -55,12 +55,12 @@ class KimButton(Gtk.Window):
         css = Gtk.CssProvider()
         css.load_from_data(b"""
         #kim-window, #kim-container {
-            background-color: rgba(13, 14, 20, 0.96);
+            background-color: #000000;
             border-radius: 18px;
         }
         #kim-orb-shell {
-            background-color: rgba(255, 255, 255, 0.06);
-            border: 1px solid rgba(210, 210, 220, 0.35);
+            background-color: #000000;
+            border: 1px solid #2f3138;
             border-radius: 16px;
             padding: 3px;
         }
@@ -107,8 +107,8 @@ class KimButton(Gtk.Window):
 
         self.btn = Gtk.EventBox()
         self.btn.set_name("kim-orb")
-        self.orb_image = Gtk.Label(label="K")
-        self.orb_image.set_name("kim-orb-k")
+        self.orb_image = Gtk.Image.new_from_file(str(ORB_ASSET))
+        self.orb_image.set_pixel_size(34)
         self.btn.add(self.orb_image)
         self.btn.set_size_request(36, 36)
         self.shell.add(self.btn)
