@@ -42,6 +42,10 @@ class RemoteServer:
         self.token = os.environ.get(str(remote.get("token_env", "KIM_REMOTE_TOKEN")), "").strip()
         self.pin = os.environ.get(str(remote.get("pin_env", "KIM_REMOTE_PIN")), "").strip()
         self.allowed_tools = set(remote.get("allowed_tools", []))
+        configured_direct = os.environ.get("KIM_REMOTE_DIRECT_TOOLS", "")
+        self.direct_tools = set(remote.get("direct_tools", [])) | {
+            item.strip() for item in configured_direct.split(",") if item.strip()
+        }
         self.cors_origins = set(remote.get("cors_origins", []))
         self.registry = registry
         self.loop = loop
@@ -124,7 +128,7 @@ class RemoteServer:
                         state = state_path.read_text().strip()
                     except OSError:
                         state = "offline"
-                    self._reply(200, {"ok": True, "voice_state": state, "allowed_tools": sorted(owner.allowed_tools)})
+                    self._reply(200, {"ok": True, "voice_state": state, "allowed_tools": sorted(owner.allowed_tools), "direct_tools": sorted(owner.direct_tools)})
                     return
                 if self.path == "/v1/approvals":
                     with owner.approvals_lock:
@@ -218,10 +222,20 @@ class RemoteServer:
                             record["status"] = "approved" if action == "approve" else "rejected"
                             owner._persist_state()
                         if action == "approve":
-                            with owner.commands_lock:
-                                owner.commands.append({"type": "tool", "approval_id": approval_id, "name": record["name"], "parameters": record["parameters"]})
-                            owner._audit("approval_queued", {"id": approval_id, "name": record["name"]}, True)
-                            self._reply(202, {"ok": True, "status": "approved_queued", "approval_id": approval_id})
+                            if record["name"] in owner.direct_tools:
+                                result, is_error = owner._run(owner.registry.run(record["name"], record["parameters"]))
+                                with owner.approvals_lock:
+                                    record["status"] = "failed" if is_error else "completed"
+                                    record["result"] = result[:20_000]
+                                    owner._persist_state()
+                                owner._audit("approval_result", {"id": approval_id, "name": record["name"], "error": is_error, "execution": "cloud"}, not is_error)
+                                self._reply(200, {"ok": not is_error, "status": record["status"], "approval_id": approval_id, "result": result})
+                            else:
+                                with owner.commands_lock:
+                                    owner.commands.append({"type": "tool", "approval_id": approval_id, "name": record["name"], "parameters": record["parameters"]})
+                                    owner._persist_state()
+                                owner._audit("approval_queued", {"id": approval_id, "name": record["name"]}, True)
+                                self._reply(202, {"ok": True, "status": "approved_queued", "approval_id": approval_id})
                         elif action == "reject":
                             owner._audit("approval_rejected", {"id": approval_id, "name": record["name"]}, True)
                             self._reply(200, {"ok": True, "status": "rejected"})

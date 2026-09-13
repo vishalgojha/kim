@@ -175,6 +175,9 @@ async def run_remote(cfg: Dict[str, Any]) -> None:
         "host": os.environ.get("KIM_REMOTE_HOST", "0.0.0.0"),
         "port": int(os.environ.get("KIM_PORT", cfg["remote"].get("port", 3000))),
     })
+    allowed_tools = os.environ.get("KIM_REMOTE_ALLOWED_TOOLS", "").strip()
+    if allowed_tools:
+        cfg["remote"]["allowed_tools"] = [item.strip() for item in allowed_tools.split(",") if item.strip()]
     _build_context(cfg)
     eleven = ElevenAPI(cfg) if cfg["elevenlabs"].get("api_key") and cfg["elevenlabs"].get("agent_id") else None
     voice_url = (lambda: eleven.get_signed_url(cfg["elevenlabs"]["agent_id"])) if eleven else None

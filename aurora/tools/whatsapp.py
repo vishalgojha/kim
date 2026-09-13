@@ -122,6 +122,11 @@ def whatsapp_send(recipient: str, message: str, confirm: str = "") -> str:
     if confirm.strip().lower() != "yes":
         return f"Sending is paused for confirmation. Draft recipient={recipient}, message_length={len(message)}. Ask Vishal to confirm, then retry with confirm='yes'."
 
+    cloud_token = os.environ.get("WHATSAPP_CLOUD_API_TOKEN", "").strip()
+    cloud_phone_id = os.environ.get("WHATSAPP_CLOUD_PHONE_NUMBER_ID", "").strip()
+    if cloud_token and cloud_phone_id:
+        return _send_cloud_message(cloud_phone_id, cloud_token, recipient, message)
+
     base = os.environ.get("WHATSAPP_API_BASE_URL", "http://127.0.0.1:8080/api").rstrip("/")
     request = urllib.request.Request(
         f"{base}/send",
@@ -142,3 +147,28 @@ def whatsapp_send(recipient: str, message: str, confirm: str = "") -> str:
         return f"WhatsApp bridge is unavailable at {base}: {exc}"
     except (json.JSONDecodeError, OSError) as exc:
         return f"WhatsApp bridge response error: {exc}"
+
+
+def _send_cloud_message(phone_id: str, token: str, recipient: str, message: str) -> str:
+    """Send through Meta's WhatsApp Cloud API when cloud secrets are configured."""
+    request = urllib.request.Request(
+        f"https://graph.facebook.com/v20.0/{phone_id}/messages",
+        data=json.dumps({
+            "messaging_product": "whatsapp",
+            "to": recipient,
+            "type": "text",
+            "text": {"preview_url": False, "body": message},
+        }).encode("utf-8"),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        message_id = payload.get("messages", [{}])[0].get("id", "unknown")
+        return f"sent WhatsApp message to {recipient} (message id {message_id})"
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:500]
+        return f"WhatsApp Cloud API HTTP {exc.code}: {detail}"
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
+        return f"WhatsApp Cloud API error: {exc}"

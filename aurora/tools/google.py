@@ -2,6 +2,7 @@
 
 import base64
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -30,7 +31,24 @@ def _services():
         return None, "Google integration dependencies are missing; install requirements.txt"
 
     creds = None
-    if TOKEN.exists():
+    # A server deployment can use an already-authorized refresh token supplied
+    # as a secret. Desktop OAuth remains the fallback for the laptop agent.
+    token_json = os.environ.get("GOOGLE_TOKEN_JSON", "").strip()
+    credentials_json = os.environ.get("GOOGLE_CREDENTIALS_JSON", "").strip()
+    if token_json:
+        try:
+            creds = Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
+        except (ValueError, json.JSONDecodeError):
+            return None, "GOOGLE_TOKEN_JSON is not valid authorized-user JSON"
+    if creds and creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+    if not creds and credentials_json:
+        try:
+            json.loads(credentials_json)
+        except (ValueError, json.JSONDecodeError):
+            return None, "GOOGLE_CREDENTIALS_JSON is not valid OAuth client JSON"
+        return None, "Google OAuth client is configured but GOOGLE_TOKEN_JSON is missing; authorize once on the laptop and upload the refresh-token JSON"
+    if not creds and TOKEN.exists():
         try:
             creds = Credentials.from_authorized_user_file(str(TOKEN), SCOPES)
         except Exception:
