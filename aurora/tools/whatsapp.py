@@ -151,8 +151,9 @@ def whatsapp_send(recipient: str, message: str, confirm: str = "") -> str:
 
 def _send_cloud_message(phone_id: str, token: str, recipient: str, message: str) -> str:
     """Send through Meta's WhatsApp Cloud API when cloud secrets are configured."""
+    version = os.environ.get("WHATSAPP_CLOUD_API_VERSION", "v20.0").strip().strip("/")
     request = urllib.request.Request(
-        f"https://graph.facebook.com/v20.0/{phone_id}/messages",
+        f"https://graph.facebook.com/{version}/{phone_id}/messages",
         data=json.dumps({
             "messaging_product": "whatsapp",
             "to": recipient,

@@ -64,7 +64,7 @@ Kim can search the local WhatsApp message index and send messages through the li
 export WHATSAPP_DB_PATH="$HOME/whatsapp-mcp/whatsapp-bridge/store/messages.db"
 ```
 
-Kim provides `whatsapp_search`, `whatsapp_recent`, `whatsapp_chats`, and `whatsapp_send`. The database remains read-only. For a laptop-independent deployment, configure Meta WhatsApp Cloud API secrets in Coolify: `WHATSAPP_CLOUD_API_TOKEN` and `WHATSAPP_CLOUD_PHONE_NUMBER_ID`.
+Kim provides `whatsapp_search`, `whatsapp_recent`, `whatsapp_chats`, and `whatsapp_send`. The database remains read-only. For a laptop-independent deployment, configure Meta WhatsApp Cloud API secrets in Coolify: `WHATSAPP_CLOUD_API_TOKEN`, `WHATSAPP_CLOUD_PHONE_NUMBER_ID`, and the current Graph version as `WHATSAPP_CLOUD_API_VERSION`.
 
 ## Android and cloud mode
 
