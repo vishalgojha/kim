@@ -73,16 +73,16 @@ class KimButton(Gtk.Window):
             min-height: 28px;
         }
         #kim-orb.active {
-            background-color: #693cff;
-            border-color: #d4c7ff;
+            background-color: transparent;
+            border-color: transparent;
         }
         #kim-orb.responding {
-            background-color: #b33cff;
-            border-color: #ffd4fa;
+            background-color: transparent;
+            border-color: transparent;
         }
         #kim-orb.paused {
-            background-color: #333746;
-            border-color: #7d8297;
+            background-color: transparent;
+            border-color: transparent;
         }
         #kim-orb label { color: #ffffff; font-weight: bold; }
         #kim-orb-k { color: #e5e7eb; font-size: 17px; font-weight: bold; }
@@ -232,8 +232,7 @@ class KimButton(Gtk.Window):
 
     def _animate_wave(self):
         if self._voice_state in {"listening", "responding"}:
-            frame = self._wave_frames[self._wave_index % len(self._wave_frames)]
-            self.orb_image.set_opacity(0.82 + 0.16 * ((self._wave_index % 4) / 3))
+            self.orb_image.set_opacity(1.0)
             self._wave_index += 1
         else:
             self.orb_image.set_opacity(1.0)
