@@ -65,7 +65,7 @@ class MainActivity : Activity() {
         card.addView(TextView(this).apply { text = "Set up Kim on this phone"; textSize = 18f; setTextColor(Color.rgb(24, 24, 40)) })
         val setupPin = EditText(this).apply { hint = "Enter your private PIN"; inputType = 0x81; maxLines = 1; setTextColor(Color.rgb(24, 24, 40)) }
         card.addView(setupPin)
-        card.addView(Button(this).apply { text = "Connect phone"; setOnClickListener { val value = setupPin.text.toString().trim(); if (value.isBlank()) { status.text = "Enter your PIN first" } else { prefs.edit().putString("pin", value).apply(); pin.setText(value); startDeviceBridge(); status.text = "Phone connected" } } })
+        card.addView(Button(this).apply { text = "Connect phone"; setOnClickListener { connectPhone(setupPin.text.toString()) } })
         card.addView(Button(this).apply { text = "Give Kim phone permissions"; setOnClickListener { showSettings() } })
         root.addView(card)
     }
@@ -79,7 +79,7 @@ class MainActivity : Activity() {
         val form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 0, 24, 0) }
         val setupPin = EditText(this).apply { hint = "Private Kim PIN"; setText(prefs.getString("pin", "")); inputType = 0x81; maxLines = 1 }
         form.addView(setupPin)
-        form.addView(Button(this).apply { text = "Connect this phone"; setOnClickListener { prefs.edit().putString("pin", setupPin.text.toString()).apply(); startDeviceBridge(); refresh(); status.text = "Phone connected" } })
+        form.addView(Button(this).apply { text = "Connect this phone"; setOnClickListener { connectPhone(setupPin.text.toString()) } })
         form.addView(Button(this).apply { text = "Allow microphone"; setOnClickListener { requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 5) } })
         form.addView(Button(this).apply { text = "Allow notifications"; setOnClickListener { if (android.os.Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 6) } })
         form.addView(Button(this).apply { text = "Notification access"; setOnClickListener { startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")) } })
@@ -190,6 +190,19 @@ class MainActivity : Activity() {
     }
     private fun startDeviceBridge() {
         startForegroundService(Intent(this, KimForegroundService::class.java))
+    }
+    private fun connectPhone(rawPin: String) {
+        val value = rawPin.trim()
+        if (value.isBlank()) { status.text = "Enter your private PIN first"; return }
+        status.text = "Connecting securely…"
+        executor.execute {
+            val result = runCatching { KimClient(baseUrl, value).getStatus() }
+            runOnUiThread {
+                if (result.isSuccess && result.getOrThrow().startsWith("200:")) {
+                    prefs.edit().putString("pin", value).apply(); pin.setText(value); startDeviceBridge(); status.text = "Connected to Kim"
+                } else status.text = "Could not connect — check your PIN"
+            }
+        }
     }
     private fun scheduleApprovalWatcher() {
         val request = PeriodicWorkRequestBuilder<KimApprovalWorker>(15, TimeUnit.MINUTES).build()
