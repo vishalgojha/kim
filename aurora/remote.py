@@ -97,6 +97,9 @@ class RemoteServer:
                 self.end_headers()
 
             def do_GET(self) -> None:  # noqa: N802
+                if self.path == "/":
+                    self._dashboard()
+                    return
                 if self.path == "/healthz":
                     self._reply(200, {"ok": True, "service": "kim"})
                     return
@@ -111,6 +114,15 @@ class RemoteServer:
                     self._reply(200, {"ok": True, "voice_state": state, "allowed_tools": sorted(owner.allowed_tools)})
                     return
                 self._reply(404, {"error": "not found"})
+
+            def _dashboard(self) -> None:
+                body = DASHBOARD_HTML.encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
 
             def do_POST(self) -> None:  # noqa: N802
                 if not owner._check(self):
@@ -192,3 +204,25 @@ class RemoteServer:
 def generate_token() -> str:
     """Generate a token for first-time setup without persisting it in source/config."""
     return secrets.token_urlsafe(32)
+
+
+DASHBOARD_HTML = r"""<!doctype html>
+<html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kim Control</title>
+<style>
+body{font:16px system-ui;background:#101216;color:#f3f4f6;max-width:680px;margin:0 auto;padding:24px}
+input,textarea,button{font:inherit;border-radius:10px;border:1px solid #374151;padding:12px;background:#181b22;color:inherit;width:100%;box-sizing:border-box;margin:6px 0}
+button{background:#2563eb;border:0;cursor:pointer}button.secondary{background:#374151}.row{display:flex;gap:8px}.row button{flex:1}.card{background:#181b22;padding:16px;border-radius:14px;margin:14px 0}pre{white-space:pre-wrap;overflow:auto;color:#a7f3d0}
+</style>
+<body><h1>Kim</h1><p>Private control panel</p>
+<div class="card"><label>Remote token</label><input id="token" type="password" placeholder="Paste KIM_REMOTE_TOKEN"><button onclick="save()">Save token</button></div>
+<div class="card"><h2>Status</h2><pre id="status">Not connected</pre><button onclick="status()">Refresh status</button><div class="row"><button class="secondary" onclick="control('pause')">Pause</button><button onclick="control('wake')">Wake</button></div></div>
+<div class="card"><h2>Run approved diagnostic</h2><input id="name" value="system_info"><textarea id="params" rows="3">{}</textarea><button onclick="runTool()">Run</button><pre id="result"></pre></div>
+<script>
+const key='kim-token'; document.querySelector('#token').value=localStorage.getItem(key)||'';
+function save(){localStorage.setItem(key,document.querySelector('#token').value);status()}
+async function call(path,opts={}){opts.headers=Object.assign({'Authorization':'Bearer '+document.querySelector('#token').value,'Content-Type':'application/json'},opts.headers||{});const r=await fetch(path,opts);const j=await r.json();if(!r.ok)throw Error(j.error||JSON.stringify(j));return j}
+async function status(){try{document.querySelector('#status').textContent=JSON.stringify(await call('/v1/status'),null,2)}catch(e){document.querySelector('#status').textContent=e}}
+async function control(action){try{document.querySelector('#result').textContent=JSON.stringify(await call('/v1/control',{method:'POST',body:JSON.stringify({action})}),null,2)}catch(e){document.querySelector('#result').textContent=e}}
+async function runTool(){try{const parameters=JSON.parse(document.querySelector('#params').value||'{}');document.querySelector('#result').textContent=JSON.stringify(await call('/v1/tool',{method:'POST',body:JSON.stringify({name:document.querySelector('#name').value,parameters})}),null,2)}catch(e){document.querySelector('#result').textContent=e}}
+</script></body></html>"""
