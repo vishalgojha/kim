@@ -129,6 +129,32 @@ class RemoteServer:
                     return
                 if not owner._check(self):
                     return
+                if self.path == "/v1/my-day":
+                    sources = [
+                        ("email", "gmail_search", {"query": "newer_than:2d", "max_results": 12}),
+                        ("calendar", "calendar_upcoming", {"days": 1}),
+                        ("WhatsApp", "whatsapp_recent", {"limit": 12}),
+                    ]
+                    results = []
+                    for label, name, parameters in sources:
+                        if name not in owner.allowed_tools:
+                            results.append({"source": label, "status": "not_enabled", "text": "Connect this source in Kim settings."})
+                            continue
+                        text, is_error = owner._run(owner.registry.run(name, parameters))
+                        results.append({"source": label, "status": "error" if is_error else "ready", "text": text[:12000]})
+                    with owner.approvals_lock:
+                        pending = [
+                            {"summary": str(item.get("summary", item.get("name", "Approval"))), "id": item.get("id")}
+                            for item in owner.approvals.values() if item.get("status") == "pending"
+                        ]
+                    self._reply(200, {
+                        "ok": True,
+                        "generated_at": time.time(),
+                        "results": results,
+                        "pending_approvals": pending,
+                    })
+                    owner._audit("my_day", {"sources": [item["source"] for item in results]}, True)
+                    return
                 if self.path == "/v1/status":
                     state_path = Path.home() / ".aurora" / "voice_state"
                     try:
@@ -497,15 +523,16 @@ DASHBOARD_HTML = r"""<!doctype html>
 </style>
 <body><main><header><h1>Kim</h1><p>Your personal AI companion</p><div class="orb"></div></header><h2>How can I<br>help you today?</h2>
 <div class="composer"><input id="ask" placeholder="Ask anything…"><button class="mic" onclick="talk()">⌁</button></div><div id="message" class="error"></div>
-<div class="label">Try asking</div><div class="chips"><button class="chip" onclick="quick('gmail_today','Checking your day…')">My day</button><button class="chip" onclick="quick('calendar_upcoming','Checking your calendar…')">Calendar</button><button class="chip" onclick="email()">Send an email</button></div>
+<div class="label">Try asking</div><div class="chips"><button class="chip" onclick="myDay()">My day</button><button class="chip" onclick="quick('calendar_upcoming','Checking your calendar…')">Calendar</button><button class="chip" onclick="email()">Send an email</button></div>
 <div id="setup" class="setup" hidden><b>Connect Kim to this phone</b><input id="pin" type="password" inputmode="numeric" maxlength="6" placeholder="Private PIN"><button onclick="save()">Connect securely</button></div>
-<div class="section"><div class="section-title">Requests</div><div id="approvals" class="requests">No requests waiting</div></div><div class="bottom"><span>⌂</span><span>✦</span><span>◷</span><span onclick="settings()">⚙</span></div>
+<div class="section"><div class="section-title">Kim’s briefing</div><div id="briefing" class="requests">Ask Kim to prepare your day.</div></div><div class="section"><div class="section-title">Requests</div><div id="approvals" class="requests">No requests waiting</div></div><div class="bottom"><span>⌂</span><span>✦</span><span>◷</span><span onclick="settings()">⚙</span></div>
 <dialog id="emailDialog"><form method="dialog" class="setup"><h3>Prepare an email</h3><input id="emailTo" placeholder="To" type="email" required><input id="emailSubject" placeholder="Subject" required><textarea id="emailBody" placeholder="Message" rows="5" required></textarea><div class="actions"><button value="cancel" class="secondary">Cancel</button><button value="send" onclick="submitEmail(event)">Ask Kim to send</button></div></form></dialog>
 <script>
 const key='kim-pin';const pin=document.querySelector('#pin');pin.value=localStorage.getItem(key)||'';if(!pin.value)document.querySelector('#setup').hidden=false;
 async function call(path,opts={}){opts.headers=Object.assign({'X-Kim-Pin':pin.value,'Content-Type':'application/json'},opts.headers||{});const r=await fetch(path,opts);const j=await r.json();if(!r.ok)throw Error(j.error||'Connection failed');return j}
 async function save(){try{await call('/v1/status');localStorage.setItem(key,pin.value);document.querySelector('#setup').hidden=true;document.querySelector('#message').textContent='Connected to Kim'}catch(e){document.querySelector('#message').textContent='Could not connect — check your PIN'}}
 async function quick(name,label){document.querySelector('#message').textContent=label;try{const j=await call('/v1/tool',{method:'POST',body:JSON.stringify({name,parameters:{}})});document.querySelector('#message').textContent=j.result||'Done'}catch(e){document.querySelector('#message').textContent=e.message}}
+async function myDay(){const box=document.querySelector('#briefing');box.textContent='Kim is reviewing your day…';document.querySelector('#message').textContent='';try{const j=await call('/v1/my-day');box.innerHTML='';for(const item of j.results){const section=document.createElement('div');section.className='request';const title=document.createElement('b');title.textContent=item.source+(item.status==='ready'?'':' · '+item.status.replace('_',' '));const pre=document.createElement('div');pre.style='white-space:pre-wrap;margin-top:6px;font-size:13px';pre.textContent=item.text;section.append(title,pre);box.appendChild(section)}if(j.pending_approvals.length){const p=document.createElement('div');p.style='margin-top:10px';p.textContent=j.pending_approvals.length+' action approval(s) waiting';box.appendChild(p)}document.querySelector('#message').textContent='Kim prepared your briefing'}catch(e){box.textContent='Kim could not prepare the briefing';document.querySelector('#message').textContent=e.message}}
 function talk(){document.querySelector('#message').textContent='Tap the microphone in the Kim app to start a voice session.'}
 function email(){document.querySelector('#emailDialog').showModal()}
 async function submitEmail(event){event.preventDefault();try{await call('/v1/approvals',{method:'POST',body:JSON.stringify({name:'gmail_send',parameters:{to:document.querySelector('#emailTo').value,subject:document.querySelector('#emailSubject').value,body:document.querySelector('#emailBody').value},summary:'Send email to '+document.querySelector('#emailTo').value})});document.querySelector('#emailDialog').close();document.querySelector('#message').textContent='Email request created — review it below';approvals()}catch(e){document.querySelector('#message').textContent=e.message}}
