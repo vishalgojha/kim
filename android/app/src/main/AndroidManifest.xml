@@ -12,5 +12,12 @@
         </activity>
         <service android:name=".KimForegroundService" android:foregroundServiceType="microphone" android:exported="false" />
         <service android:name=".KimVoiceService" android:foregroundServiceType="microphone" android:exported="false" />
+        <service android:name=".KimNotificationListener" android:label="Kim notification access" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true">
+            <intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter>
+        </service>
+        <service android:name=".KimAccessibilityService" android:label="Kim accessibility controls" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true">
+            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/kim_accessibility" />
+        </service>
     </application>
 </manifest>

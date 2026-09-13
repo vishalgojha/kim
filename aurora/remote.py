@@ -58,6 +58,8 @@ class RemoteServer:
         self.approvals: Dict[str, Dict[str, Any]] = {}
         self.approvals_lock = threading.Lock()
         self.commands: list[Dict[str, Any]] = []
+        self.device_commands: list[Dict[str, Any]] = []
+        self.devices: Dict[str, Dict[str, Any]] = {}
         self.google_states: Dict[str, float] = {}
         self.commands_lock = threading.Lock()
         self._load_state()
@@ -163,6 +165,24 @@ class RemoteServer:
                         owner._persist_state()
                     self._reply(200, {"ok": True, "command": command})
                     return
+                if self.path.startswith("/v1/device/commands/next"):
+                    query = parse_qs(urlparse(self.path).query)
+                    device_id = str((query.get("device_id") or [""])[0]).strip()
+                    if not device_id:
+                        self._reply(400, {"error": "device_id is required"})
+                        return
+                    with owner.commands_lock:
+                        command = next((item for item in owner.device_commands if item.get("device_id") in {None, device_id}), None)
+                        if command:
+                            owner.device_commands.remove(command)
+                            owner._persist_state()
+                    self._reply(200, {"ok": True, "command": command})
+                    return
+                if self.path == "/v1/device/status":
+                    with owner.commands_lock:
+                        devices = {k: dict(v) for k, v in owner.devices.items()}
+                    self._reply(200, {"ok": True, "devices": devices})
+                    return
                 if self.path == "/v1/voice/session":
                     if owner.voice_url is None:
                         self._reply(503, {"error": "voice service is not configured"})
@@ -215,6 +235,32 @@ class RemoteServer:
                             owner._persist_state()
                         owner._audit("control", {"action": action}, True)
                         self._reply(200, {"ok": True, "action": action})
+                        return
+                    if self.path == "/v1/device/heartbeat":
+                        device_id = str(data.get("device_id", "")).strip()
+                        if not device_id or len(device_id) > 100:
+                            raise ValueError("device_id is required")
+                        with owner.commands_lock:
+                            owner.devices[device_id] = {"device_id": device_id, "last_seen": time.time(), "capabilities": data.get("capabilities", [])}
+                            owner._persist_state()
+                        self._reply(200, {"ok": True, "device_id": device_id})
+                        return
+                    if self.path == "/v1/device/command":
+                        action = str(data.get("action", "")).strip().lower()
+                        allowed = {"open_url", "open_app", "media", "volume", "flashlight", "notify"}
+                        if action not in allowed:
+                            raise ValueError(f"action must be one of {sorted(allowed)}")
+                        command = {"id": uuid.uuid4().hex, "type": "device", "device_id": str(data.get("device_id", "")).strip() or None, "action": action, "parameters": data.get("parameters", {}), "created_at": time.time()}
+                        with owner.commands_lock:
+                            owner.device_commands.append(command)
+                            owner._persist_state()
+                        owner._audit("device_command_queued", {"id": command["id"], "action": action, "device_id": command["device_id"]}, True)
+                        self._reply(202, {"ok": True, "command_id": command["id"]})
+                        return
+                    if self.path.startswith("/v1/device/commands/") and self.path.endswith("/result"):
+                        command_id = self.path.removeprefix("/v1/device/commands/").removesuffix("/result").strip("/")
+                        owner._audit("device_command_result", {"id": command_id, "action": str(data.get("action", ""))[:80]}, not bool(data.get("is_error")))
+                        self._reply(200, {"ok": True})
                         return
                     if self.path == "/v1/say":
                         text = str(data.get("text", "")).strip()
@@ -330,10 +376,16 @@ class RemoteServer:
             state = json.loads(self.state_path.read_text(encoding="utf-8"))
             approvals = state.get("approvals", {})
             commands = state.get("commands", [])
+            device_commands = state.get("device_commands", [])
+            devices = state.get("devices", {})
             if isinstance(approvals, dict):
                 self.approvals = {str(k): v for k, v in approvals.items() if isinstance(v, dict)}
             if isinstance(commands, list):
                 self.commands = [v for v in commands if isinstance(v, dict)]
+            if isinstance(device_commands, list):
+                self.device_commands = [v for v in device_commands if isinstance(v, dict)]
+            if isinstance(devices, dict):
+                self.devices = {str(k): v for k, v in devices.items() if isinstance(v, dict)}
             states = state.get("google_states", {})
             if isinstance(states, dict):
                 self.google_states = {str(k): float(v) for k, v in states.items() if time.time() - float(v) < 600}
@@ -410,7 +462,7 @@ class RemoteServer:
         try:
             self.state_path.parent.mkdir(parents=True, exist_ok=True)
             temporary = self.state_path.with_suffix(self.state_path.suffix + ".tmp")
-            temporary.write_text(json.dumps({"approvals": self.approvals, "commands": self.commands, "google_states": self.google_states}, ensure_ascii=False), encoding="utf-8")
+            temporary.write_text(json.dumps({"approvals": self.approvals, "commands": self.commands, "device_commands": self.device_commands, "devices": self.devices, "google_states": self.google_states}, ensure_ascii=False), encoding="utf-8")
             os.replace(temporary, self.state_path)
             try:
                 self.state_path.chmod(0o600)

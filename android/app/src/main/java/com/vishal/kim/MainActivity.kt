@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.provider.Settings
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
@@ -41,6 +42,12 @@ class MainActivity : Activity() {
         status = TextView(this).apply { text = "Not connected"; textSize = 16f; setPadding(0, 16, 0, 16) }
         root.addView(status)
         root.addView(Button(this).apply { text = "Talk to Kim"; setOnClickListener { startListening() } })
+        root.addView(TextView(this).apply { text = "Phone permissions"; textSize = 22f; setPadding(0, 22, 0, 4) })
+        root.addView(TextView(this).apply { text = "Grant only the access you want Kim to use."; textSize = 14f })
+        root.addView(Button(this).apply { text = "Allow microphone"; setOnClickListener { requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 5) } })
+        root.addView(Button(this).apply { text = "Allow notifications"; setOnClickListener { if (android.os.Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 6) } })
+        root.addView(Button(this).apply { text = "Enable notification access"; setOnClickListener { startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")) } })
+        root.addView(Button(this).apply { text = "Enable accessibility controls"; setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } })
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         row.addView(Button(this).apply { text = "Pause"; setOnClickListener { control("pause") } }, LinearLayout.LayoutParams(0, -2, 1f))
         row.addView(Button(this).apply { text = "Wake"; setOnClickListener { control("wake") } }, LinearLayout.LayoutParams(0, -2, 1f))
