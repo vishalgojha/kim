@@ -444,16 +444,16 @@ DASHBOARD_HTML = r"""<!doctype html>
 </style>
 <body><h1>Kim</h1><p>Private control panel</p>
 <div class="card"><label>Kim PIN</label><input id="pin" type="password" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit PIN"><button onclick="save()">Save PIN</button></div>
-<div class="card"><h2>Status</h2><pre id="status">Not connected</pre><button onclick="status()">Refresh status</button><div class="row"><button class="secondary" onclick="control('pause')">Pause</button><button onclick="control('wake')">Wake</button></div></div>
+<div class="card"><h2>Status</h2><pre id="status">Not connected</pre><button onclick="status()">Refresh status</button></div>
 <div class="card"><h2>Google</h2><p>Connect Gmail and Calendar securely. Google will ask for your permission.</p><button onclick="connectGoogle()">Connect Google</button></div>
-<div class="card"><h2>Run approved diagnostic</h2><input id="name" value="system_info"><textarea id="params" rows="3">{}</textarea><button onclick="runTool()">Run</button><pre id="result"></pre></div>
-<div class="card"><h2>Request an action</h2><input id="approvalName" placeholder="Tool name, e.g. gmail_send"><textarea id="approvalParams" rows="4">{}</textarea><input id="approvalSummary" placeholder="Short description / confirmation details"><button onclick="requestApproval()">Request approval</button></div>
 <div class="card"><h2>Approvals</h2><button onclick="approvals()">Refresh approvals</button><div id="approvals">None loaded</div></div>
+<details class="card"><summary>Advanced controls</summary><div class="row"><button class="secondary" onclick="control('pause')">Pause</button><button onclick="control('wake')">Wake</button></div><h2>Request an action</h2><input id="approvalName" placeholder="Tool name, e.g. gmail_send"><textarea id="approvalParams" rows="4">{}</textarea><input id="approvalSummary" placeholder="Short description / confirmation details"><button onclick="requestApproval()">Request approval</button><h2>Diagnostics</h2><input id="name" value="system_info"><textarea id="params" rows="3">{}</textarea><button onclick="runTool()">Run</button></details>
+<pre id="result"></pre>
 <script>
 const key='kim-pin'; document.querySelector('#pin').value=localStorage.getItem(key)||'';
 function save(){localStorage.setItem(key,document.querySelector('#pin').value);status()}
 async function call(path,opts={}){opts.headers=Object.assign({'X-Kim-Pin':document.querySelector('#pin').value,'Content-Type':'application/json'},opts.headers||{});const r=await fetch(path,opts);const j=await r.json();if(!r.ok)throw Error(j.error||JSON.stringify(j));return j}
-async function status(){try{document.querySelector('#status').textContent=JSON.stringify(await call('/v1/status'),null,2)}catch(e){document.querySelector('#status').textContent=e}}
+async function status(){try{const d=await call('/v1/status');document.querySelector('#status').textContent=d.ok?'Connected\nVoice: '+d.voice_state+'\n'+d.allowed_tools.length+' tools ready':'Not connected'}catch(e){document.querySelector('#status').textContent=e}}
 async function connectGoogle(){try{const j=await call('/v1/google/start');window.location.href=j.auth_url}catch(e){document.querySelector('#result').textContent=e}}
 async function control(action){try{document.querySelector('#result').textContent=JSON.stringify(await call('/v1/control',{method:'POST',body:JSON.stringify({action})}),null,2)}catch(e){document.querySelector('#result').textContent=e}}
 async function runTool(){try{const parameters=JSON.parse(document.querySelector('#params').value||'{}');document.querySelector('#result').textContent=JSON.stringify(await call('/v1/tool',{method:'POST',body:JSON.stringify({name:document.querySelector('#name').value,parameters})}),null,2)}catch(e){document.querySelector('#result').textContent=e}}
