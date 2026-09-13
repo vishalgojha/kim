@@ -18,6 +18,7 @@ class KimVoiceService : Service() {
     private var recorder: AudioRecord? = null
     private var player: AudioTrack? = null
     private var recording = false
+    private val readOnlyTools = setOf("battery", "disk_usage", "known_apps", "running_processes", "system_info")
 
     override fun onCreate() {
         super.onCreate()
@@ -52,10 +53,35 @@ class KimVoiceService : Service() {
                     val bytes = Base64.decode(encoded, Base64.DEFAULT)
                     player?.write(bytes, 0, bytes.size)
                 }
+                if (json.optString("type") == "client_tool_call") handleToolCall(json)
             } catch (_: Exception) { }
         }
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { stopSelf() }
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { stopSelf() }
+    }
+
+    private fun handleToolCall(json: JSONObject) {
+        val toolCallId = json.optString("tool_call_id", json.optString("id"))
+        val name = json.optString("tool_name", json.optString("name"))
+        val parameters = json.optJSONObject("parameters") ?: JSONObject()
+        if (toolCallId.isBlank() || name.isBlank()) return
+        Thread {
+            try {
+                val pin = KimPrefs.open(this).getString("pin", "") ?: ""
+                val kim = KimClient("https://app.vishalojha.me", pin)
+                val raw = if (name in readOnlyTools) {
+                    kim.runTool(name, parameters)
+                } else {
+                    kim.requestApproval(name, parameters, "Voice requested $name")
+                }
+                val code = raw.substringBefore(":").toIntOrNull() ?: 500
+                val body = raw.substringAfter(": ", "")
+                val result = if (name in readOnlyTools) body else "Approval requested: $body"
+                socket?.send(JSONObject().put("type", "client_tool_result").put("tool_call_id", toolCallId).put("result", result).put("is_error", code !in 200..299).toString())
+            } catch (error: Exception) {
+                socket?.send(JSONObject().put("type", "client_tool_result").put("tool_call_id", toolCallId).put("result", error.message ?: "tool failed").put("is_error", true).toString())
+            }
+        }.start()
     }
 
     private fun startAudio() {

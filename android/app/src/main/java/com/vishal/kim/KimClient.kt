@@ -2,6 +2,7 @@ package com.vishal.kim
 
 import java.net.HttpURLConnection
 import java.net.URL
+import org.json.JSONObject
 
 class KimClient(private val baseUrl: String, private val token: String) {
     fun getStatus(): String = request("GET", "/v1/status")
@@ -9,6 +10,13 @@ class KimClient(private val baseUrl: String, private val token: String) {
     fun getVoiceSession(): String = request("GET", "/v1/voice/session")
     fun control(action: String): String = request("POST", "/v1/control", "{\"action\":\"$action\"}")
     fun approve(id: String): String = request("POST", "/v1/approvals/$id/approve", "{}")
+    fun reject(id: String): String = request("POST", "/v1/approvals/$id/reject", "{}")
+    fun runTool(name: String, parameters: JSONObject): String = request(
+        "POST", "/v1/tool", JSONObject().put("name", name).put("parameters", parameters).toString()
+    )
+    fun requestApproval(name: String, parameters: JSONObject, summary: String): String = request(
+        "POST", "/v1/approvals", JSONObject().put("name", name).put("parameters", parameters).put("summary", summary).toString()
+    )
 
     private fun request(method: String, path: String, body: String? = null): String {
         val connection = (URL(baseUrl.trimEnd('/') + path).openConnection() as HttpURLConnection)
