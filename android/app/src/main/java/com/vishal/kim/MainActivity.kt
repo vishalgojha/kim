@@ -6,6 +6,10 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.*
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
@@ -17,6 +21,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        scheduleApprovalWatcher()
+        if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 6)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(32, 40, 32, 24) }
         TextView(this).apply { text = "Kim"; textSize = 32f }.also(root::addView)
         TextView(this).apply { text = "Android control panel"; textSize = 16f }.also(root::addView)
@@ -45,5 +51,9 @@ class MainActivity : Activity() {
     private fun startListening() {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 5)
         else startForegroundService(Intent(this, KimVoiceService::class.java))
+    }
+    private fun scheduleApprovalWatcher() {
+        val request = PeriodicWorkRequestBuilder<KimApprovalWorker>(15, TimeUnit.MINUTES).build()
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork("kim-approval-watcher", ExistingPeriodicWorkPolicy.KEEP, request)
     }
 }
