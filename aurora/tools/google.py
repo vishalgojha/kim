@@ -15,6 +15,7 @@ CREDENTIALS = ROOT / "credentials.json"
 TOKEN = Path.home() / ".kim" / "google_token.json"
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/calendar",
 ]
 
@@ -90,6 +91,31 @@ def gmail_read(message_id: str) -> str:
     headers = {h["name"].lower(): h["value"] for h in msg.get("payload", {}).get("headers", [])}
     body = _body_text(msg.get("payload", {}))
     return f"From: {headers.get('from', '')}\nDate: {headers.get('date', '')}\nSubject: {headers.get('subject', '(no subject)')}\n\n{body[:12000]}"
+
+
+@tool(
+    "gmail_send",
+    "Send an email from Vishal's Gmail. Always show the recipient, subject, and body and get explicit confirmation before calling with confirm='yes'.",
+    {
+        "to": {"type": "string", "description": "recipient email address", "required": True},
+        "subject": {"type": "string", "description": "email subject", "required": True},
+        "body": {"type": "string", "description": "plain-text email body", "required": True},
+        "confirm": {"type": "string", "description": "must be yes after Vishal explicitly confirms sending", "required": False},
+    },
+    timeout=30,
+)
+def gmail_send(to: str, subject: str, body: str, confirm: str = "") -> str:
+    if confirm.strip().lower() != "yes":
+        return f"Sending is paused for confirmation. Draft recipient={to}, subject={subject!r}, body_length={len(body)}. Ask Vishal to confirm, then retry with confirm='yes'."
+    services, error = _services()
+    if error:
+        return error
+    message = MIMEText(body[:100_000], "plain", "utf-8")
+    message["To"] = to
+    message["Subject"] = subject[:998]
+    encoded = base64.urlsafe_b64encode(message.as_bytes()).decode()
+    sent = services["gmail"].users().messages().send(userId="me", body={"raw": encoded}).execute()
+    return f"sent email to {to} (message id {sent.get('id', 'unknown')})"
 
 
 def _body_text(part: dict[str, Any]) -> str:
