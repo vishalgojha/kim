@@ -38,6 +38,7 @@ class MainActivity : Activity() {
         TextView(this).apply { text = "Your personal AI companion"; textSize = 15f; gravity = android.view.Gravity.CENTER; setPadding(0, 2, 0, 8) }.also(root::addView)
         root.addView(KimOrbView(this), LinearLayout.LayoutParams(-1, 230))
         TextView(this).apply { text = "How can I\nhelp you today?"; textSize = 31f; gravity = android.view.Gravity.CENTER; setTextColor(Color.rgb(24, 24, 40)); setPadding(0, 4, 0, 18) }.also(root::addView)
+        if (prefs.getString("pin", "").isNullOrBlank()) addSetupCard(root)
         status = TextView(this).apply { text = "Ready when you are"; textSize = 14f; gravity = android.view.Gravity.CENTER; setPadding(0, 8, 0, 8) }
         root.addView(status)
         root.addView(Button(this).apply { text = "Talk to Kim"; setOnClickListener { startListening() } })
@@ -56,7 +57,17 @@ class MainActivity : Activity() {
         val screen = ScrollView(this).apply { setBackgroundColor(Color.rgb(245, 249, 250)); addView(root) }
         theme(screen)
         setContentView(screen)
-        if (prefs.getString("pin", "").isNullOrBlank()) showSettings()
+        if (prefs.getString("pin", "").isNullOrBlank()) status.text = "Finish setup below to connect Kim"
+    }
+
+    private fun addSetupCard(root: LinearLayout) {
+        val card = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(16, 10, 16, 10); setBackgroundColor(Color.WHITE) }
+        card.addView(TextView(this).apply { text = "Set up Kim on this phone"; textSize = 18f; setTextColor(Color.rgb(24, 24, 40)) })
+        val setupPin = EditText(this).apply { hint = "Enter your private PIN"; inputType = 0x81; maxLines = 1; setTextColor(Color.rgb(24, 24, 40)) }
+        card.addView(setupPin)
+        card.addView(Button(this).apply { text = "Connect phone"; setOnClickListener { val value = setupPin.text.toString().trim(); if (value.isBlank()) { status.text = "Enter your PIN first" } else { prefs.edit().putString("pin", value).apply(); pin.setText(value); startDeviceBridge(); status.text = "Phone connected" } } })
+        card.addView(Button(this).apply { text = "Give Kim phone permissions"; setOnClickListener { showSettings() } })
+        root.addView(card)
     }
 
     private fun runQuickAction(name: String, label: String) {
@@ -100,7 +111,7 @@ class MainActivity : Activity() {
                 view.setHintTextColor(Color.rgb(161, 161, 170))
                 view.backgroundTintList = ColorStateList.valueOf(Color.rgb(82, 82, 91))
             }
-            is TextView -> view.setTextColor(if (view.textSize >= 22f) Color.rgb(237, 237, 237) else Color.rgb(161, 161, 170))
+            is TextView -> view.setTextColor(Color.rgb(24, 24, 40))
         }
         if (view is ViewGroup) for (i in 0 until view.childCount) theme(view.getChildAt(i))
     }
