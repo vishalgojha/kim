@@ -6,6 +6,7 @@ import java.net.URL
 class KimClient(private val baseUrl: String, private val token: String) {
     fun getStatus(): String = request("GET", "/v1/status")
     fun getApprovals(): String = request("GET", "/v1/approvals")
+    fun getVoiceSession(): String = request("GET", "/v1/voice/session")
     fun control(action: String): String = request("POST", "/v1/control", "{\"action\":\"$action\"}")
     fun approve(id: String): String = request("POST", "/v1/approvals/$id/approve", "{}")
 

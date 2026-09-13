@@ -168,7 +168,9 @@ async def run_remote(cfg: Dict[str, Any]) -> None:
         "port": int(os.environ.get("KIM_PORT", cfg["remote"].get("port", 3000))),
     })
     _build_context(cfg)
-    remote = RemoteServer(cfg, REGISTRY, asyncio.get_running_loop(), Path.home() / ".aurora" / "voice_command")
+    eleven = ElevenAPI(cfg) if cfg["elevenlabs"].get("api_key") and cfg["elevenlabs"].get("agent_id") else None
+    voice_url = (lambda: eleven.get_signed_url(cfg["elevenlabs"]["agent_id"])) if eleven else None
+    remote = RemoteServer(cfg, REGISTRY, asyncio.get_running_loop(), Path.home() / ".aurora" / "voice_command", voice_url=voice_url)
     remote.start()
     stop_ev = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -181,6 +183,8 @@ async def run_remote(cfg: Dict[str, Any]) -> None:
         await stop_ev.wait()
     finally:
         remote.stop()
+        if eleven:
+            eleven.close()
 
 
 async def run_selftest(cfg: Dict[str, Any]) -> int:

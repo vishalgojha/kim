@@ -33,6 +33,7 @@ class RemoteServer:
         loop: asyncio.AbstractEventLoop,
         control_path: Path,
         speak: Optional[Callable[[str], Awaitable[None]]] = None,
+        voice_url: Optional[Callable[[], str]] = None,
     ) -> None:
         remote = cfg.get("remote", {})
         self.enabled = bool(remote.get("enabled", False))
@@ -46,6 +47,7 @@ class RemoteServer:
         self.loop = loop
         self.control_path = control_path
         self.speak = speak
+        self.voice_url = voice_url
         self.audit_path = Path(str(remote.get("audit_path", "~/.aurora/remote-audit.jsonl"))).expanduser()
         self.approvals: Dict[str, Dict[str, Any]] = {}
         self.approvals_lock = threading.Lock()
@@ -131,6 +133,12 @@ class RemoteServer:
                     with owner.commands_lock:
                         action = owner.commands.pop(0) if owner.commands else None
                     self._reply(200, {"ok": True, "action": action})
+                    return
+                if self.path == "/v1/voice/session":
+                    if owner.voice_url is None:
+                        self._reply(503, {"error": "voice service is not configured"})
+                        return
+                    self._reply(200, {"ok": True, "url": owner.voice_url()})
                     return
                 self._reply(404, {"error": "not found"})
 
