@@ -19,6 +19,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Optional
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from .tools.registry import ToolRegistry
 
@@ -57,6 +58,7 @@ class RemoteServer:
         self.approvals: Dict[str, Dict[str, Any]] = {}
         self.approvals_lock = threading.Lock()
         self.commands: list[Dict[str, Any]] = []
+        self.google_states: Dict[str, float] = {}
         self.commands_lock = threading.Lock()
         self._load_state()
         self.server: Optional[ThreadingHTTPServer] = None
@@ -120,6 +122,9 @@ class RemoteServer:
                 if self.path == "/healthz":
                     self._reply(200, {"ok": True, "service": "kim"})
                     return
+                if self.path.startswith("/v1/google/callback"):
+                    self._google_callback()
+                    return
                 if not owner._check(self):
                     return
                 if self.path == "/v1/status":
@@ -131,7 +136,7 @@ class RemoteServer:
                     self._reply(200, {"ok": True, "voice_state": state, "allowed_tools": sorted(owner.allowed_tools), "direct_tools": sorted(owner.direct_tools)})
                     return
                 if self.path == "/v1/integrations":
-                    google_ready = bool(os.environ.get("GOOGLE_TOKEN_JSON", "").strip())
+                    google_ready = bool(os.environ.get("GOOGLE_TOKEN_JSON", "").strip()) or Path(os.environ.get("GOOGLE_TOKEN_PATH", "~/.aurora/google-token.json")).expanduser().exists()
                     whatsapp_ready = bool(os.environ.get("WHATSAPP_CLOUD_API_TOKEN", "").strip() and os.environ.get("WHATSAPP_CLOUD_PHONE_NUMBER_ID", "").strip())
                     self._reply(200, {"ok": True, "integrations": {
                         "gmail": {"cloud": google_ready, "laptop_fallback": True},
@@ -140,6 +145,12 @@ class RemoteServer:
                         "laptop_control": {"cloud": False, "laptop_fallback": True},
                         "banking": {"enabled": False},
                     }})
+                    return
+                if self.path == "/v1/google/start":
+                    try:
+                        self._reply(200, {"ok": True, "auth_url": owner._google_auth_url(self)})
+                    except ValueError as exc:
+                        self._reply(400, {"error": str(exc)})
                     return
                 if self.path == "/v1/approvals":
                     with owner.approvals_lock:
@@ -168,6 +179,25 @@ class RemoteServer:
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(body)
+
+            def _google_callback(self) -> None:
+                query = parse_qs(urlparse(self.path).query)
+                state = str((query.get("state") or [""])[0])
+                code = str((query.get("code") or [""])[0])
+                if not owner._consume_google_state(state):
+                    self._reply(400, {"error": "invalid or expired Google OAuth state"})
+                    return
+                if not code:
+                    self._reply(400, {"error": "Google authorization was not completed"})
+                    return
+                try:
+                    owner._finish_google_auth(code, self)
+                except ValueError as exc:
+                    self._reply(400, {"error": str(exc)})
+                    return
+                self.send_response(302)
+                self.send_header("Location", "/?google=connected")
+                self.end_headers()
 
             def do_POST(self) -> None:  # noqa: N802
                 if not owner._check(self):
@@ -304,13 +334,71 @@ class RemoteServer:
                 self.approvals = {str(k): v for k, v in approvals.items() if isinstance(v, dict)}
             if isinstance(commands, list):
                 self.commands = [v for v in commands if isinstance(v, dict)]
+            states = state.get("google_states", {})
+            if isinstance(states, dict):
+                self.google_states = {str(k): float(v) for k, v in states.items() if time.time() - float(v) < 600}
         except (OSError, json.JSONDecodeError):
             return
 
+    def _google_redirect_uri(self, handler: BaseHTTPRequestHandler) -> str:
+        configured = os.environ.get("GOOGLE_REDIRECT_URI", "").strip()
+        if configured:
+            return configured.rstrip("/")
+        proto = handler.headers.get("X-Forwarded-Proto", "https").split(",")[0].strip()
+        host = handler.headers.get("Host", "").split(",")[0].strip()
+        if not host:
+            raise ValueError("GOOGLE_REDIRECT_URI is required")
+        return f"{proto}://{host}/v1/google/callback"
+
+    @staticmethod
+    def _google_scopes() -> list[str]:
+        return [
+            "https://www.googleapis.com/auth/gmail.readonly",
+            "https://www.googleapis.com/auth/gmail.send",
+            "https://www.googleapis.com/auth/calendar",
+        ]
+
+    def _google_auth_url(self, handler: BaseHTTPRequestHandler) -> str:
+        client_json = os.environ.get("GOOGLE_CREDENTIALS_JSON", "").strip()
+        if not client_json:
+            raise ValueError("add GOOGLE_CREDENTIALS_JSON to Coolify first")
+        try:
+            from google_auth_oauthlib.flow import Flow
+            flow = Flow.from_client_config(json.loads(client_json), scopes=self._google_scopes())
+        except (ImportError, ValueError, json.JSONDecodeError) as exc:
+            raise ValueError(f"Google OAuth client JSON is invalid: {exc}") from exc
+        flow.redirect_uri = self._google_redirect_uri(handler)
+        state = secrets.token_urlsafe(32)
+        with self.approvals_lock:
+            self.google_states[state] = time.time()
+            self._persist_state()
+        return flow.authorization_url(access_type="offline", prompt="consent", state=state, include_granted_scopes="true")[0]
+
+    def _consume_google_state(self, state: str) -> bool:
+        with self.approvals_lock:
+            created = self.google_states.pop(state, 0)
+            self._persist_state()
+        return bool(created and time.time() - created < 600)
+
+    def _finish_google_auth(self, code: str, handler: BaseHTTPRequestHandler) -> None:
+        client_json = os.environ.get("GOOGLE_CREDENTIALS_JSON", "").strip()
+        try:
+            from google_auth_oauthlib.flow import Flow
+            flow = Flow.from_client_config(json.loads(client_json), scopes=self._google_scopes())
+            flow.redirect_uri = self._google_redirect_uri(handler)
+            flow.fetch_token(code=code)
+            token_path = Path(os.environ.get("GOOGLE_TOKEN_PATH", str(self.state_path.with_name("google-token.json")))).expanduser()
+            token_path.parent.mkdir(parents=True, exist_ok=True)
+            token_path.write_text(flow.credentials.to_json(), encoding="utf-8")
+            token_path.chmod(0o600)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("Google OAuth callback failed")
+            raise ValueError(f"Google authorization failed: {exc}") from exc
+
     def _can_execute_direct(self, name: str) -> bool:
         """Only use cloud execution when that connector's secret is present."""
-        if name in {"gmail_send", "calendar_create", "gmail_search", "gmail_read", "calendar_upcoming"}:
-            return bool(os.environ.get("GOOGLE_TOKEN_JSON", "").strip())
+        if name in {"gmail_send", "calendar_create", "gmail_search", "gmail_read", "calendar_upcoming", "gmail_today", "gmail_unanswered", "gmail_contacts"}:
+            return bool(os.environ.get("GOOGLE_TOKEN_JSON", "").strip()) or Path(os.environ.get("GOOGLE_TOKEN_PATH", "~/.aurora/google-token.json")).expanduser().exists()
         if name == "whatsapp_send":
             return bool(os.environ.get("WHATSAPP_CLOUD_API_TOKEN", "").strip() and os.environ.get("WHATSAPP_CLOUD_PHONE_NUMBER_ID", "").strip())
         return True
@@ -320,7 +408,7 @@ class RemoteServer:
         try:
             self.state_path.parent.mkdir(parents=True, exist_ok=True)
             temporary = self.state_path.with_suffix(self.state_path.suffix + ".tmp")
-            temporary.write_text(json.dumps({"approvals": self.approvals, "commands": self.commands}, ensure_ascii=False), encoding="utf-8")
+            temporary.write_text(json.dumps({"approvals": self.approvals, "commands": self.commands, "google_states": self.google_states}, ensure_ascii=False), encoding="utf-8")
             os.replace(temporary, self.state_path)
             try:
                 self.state_path.chmod(0o600)
@@ -359,6 +447,7 @@ button{background:#2563eb;border:0;cursor:pointer}button.secondary{background:#3
 <body><h1>Kim</h1><p>Private control panel</p>
 <div class="card"><label>Kim PIN</label><input id="pin" type="password" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit PIN"><button onclick="save()">Save PIN</button></div>
 <div class="card"><h2>Status</h2><pre id="status">Not connected</pre><button onclick="status()">Refresh status</button><div class="row"><button class="secondary" onclick="control('pause')">Pause</button><button onclick="control('wake')">Wake</button></div></div>
+<div class="card"><h2>Google</h2><p>Connect Gmail and Calendar securely. Google will ask for your permission.</p><button onclick="connectGoogle()">Connect Google</button></div>
 <div class="card"><h2>Run approved diagnostic</h2><input id="name" value="system_info"><textarea id="params" rows="3">{}</textarea><button onclick="runTool()">Run</button><pre id="result"></pre></div>
 <div class="card"><h2>Request an action</h2><input id="approvalName" placeholder="Tool name, e.g. gmail_send"><textarea id="approvalParams" rows="4">{}</textarea><input id="approvalSummary" placeholder="Short description / confirmation details"><button onclick="requestApproval()">Request approval</button></div>
 <div class="card"><h2>Approvals</h2><button onclick="approvals()">Refresh approvals</button><div id="approvals">None loaded</div></div>
@@ -367,6 +456,7 @@ const key='kim-pin'; document.querySelector('#pin').value=localStorage.getItem(k
 function save(){localStorage.setItem(key,document.querySelector('#pin').value);status()}
 async function call(path,opts={}){opts.headers=Object.assign({'X-Kim-Pin':document.querySelector('#pin').value,'Content-Type':'application/json'},opts.headers||{});const r=await fetch(path,opts);const j=await r.json();if(!r.ok)throw Error(j.error||JSON.stringify(j));return j}
 async function status(){try{document.querySelector('#status').textContent=JSON.stringify(await call('/v1/status'),null,2)}catch(e){document.querySelector('#status').textContent=e}}
+async function connectGoogle(){try{const j=await call('/v1/google/start');window.location.href=j.auth_url}catch(e){document.querySelector('#result').textContent=e}}
 async function control(action){try{document.querySelector('#result').textContent=JSON.stringify(await call('/v1/control',{method:'POST',body:JSON.stringify({action})}),null,2)}catch(e){document.querySelector('#result').textContent=e}}
 async function runTool(){try{const parameters=JSON.parse(document.querySelector('#params').value||'{}');document.querySelector('#result').textContent=JSON.stringify(await call('/v1/tool',{method:'POST',body:JSON.stringify({name:document.querySelector('#name').value,parameters})}),null,2)}catch(e){document.querySelector('#result').textContent=e}}
 async function requestApproval(){try{const parameters=JSON.parse(document.querySelector('#approvalParams').value||'{}');const j=await call('/v1/approvals',{method:'POST',body:JSON.stringify({name:document.querySelector('#approvalName').value,parameters,summary:document.querySelector('#approvalSummary').value})});document.querySelector('#result').textContent=JSON.stringify(j,null,2);approvals()}catch(e){document.querySelector('#result').textContent=e}}

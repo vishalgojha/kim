@@ -14,12 +14,15 @@ from .registry import tool
 
 ROOT = Path(__file__).resolve().parents[2]
 CREDENTIALS = ROOT / "credentials.json"
-TOKEN = Path.home() / ".kim" / "google_token.json"
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/calendar",
 ]
+
+
+def _token_path() -> Path:
+    return Path(os.environ.get("GOOGLE_TOKEN_PATH", str(Path.home() / ".kim" / "google_token.json"))).expanduser()
 
 
 def _services():
@@ -49,9 +52,10 @@ def _services():
         except (ValueError, json.JSONDecodeError):
             return None, "GOOGLE_CREDENTIALS_JSON is not valid OAuth client JSON"
         return None, "Google OAuth client is configured but GOOGLE_TOKEN_JSON is missing; authorize once on the laptop and upload the refresh-token JSON"
-    if not creds and TOKEN.exists():
+    token_path = _token_path()
+    if not creds and token_path.exists():
         try:
-            creds = Credentials.from_authorized_user_file(str(TOKEN), SCOPES)
+            creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
         except Exception:
             creds = None
     if creds and creds.expired and creds.refresh_token:
@@ -59,10 +63,10 @@ def _services():
     if not creds or not creds.valid:
         if not CREDENTIALS.exists():
             return None, f"Google setup required: download Desktop OAuth credentials to {CREDENTIALS}"
-        TOKEN.parent.mkdir(parents=True, exist_ok=True)
+        token_path.parent.mkdir(parents=True, exist_ok=True)
         flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS), SCOPES)
         creds = flow.run_local_server(port=0)
-        TOKEN.write_text(creds.to_json())
+        token_path.write_text(creds.to_json())
 
     return {
         "gmail": build("gmail", "v1", credentials=creds),

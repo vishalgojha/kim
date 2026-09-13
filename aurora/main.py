@@ -175,6 +175,9 @@ async def run_remote(cfg: Dict[str, Any]) -> None:
         "host": os.environ.get("KIM_REMOTE_HOST", "0.0.0.0"),
         "port": int(os.environ.get("KIM_PORT", cfg["remote"].get("port", 3000))),
     })
+    # OAuth tokens obtained through the hosted Connect Google flow live beside
+    # the persistent remote state, never in the image or source tree.
+    os.environ.setdefault("GOOGLE_TOKEN_PATH", str(Path(os.environ.get("KIM_REMOTE_STATE_PATH", "/data/remote-state.json")).expanduser().with_name("google-token.json")))
     allowed_tools = os.environ.get("KIM_REMOTE_ALLOWED_TOOLS", "").strip()
     if allowed_tools:
         cfg["remote"]["allowed_tools"] = [item.strip() for item in allowed_tools.split(",") if item.strip()]
