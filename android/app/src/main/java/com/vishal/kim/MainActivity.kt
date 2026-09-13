@@ -43,14 +43,34 @@ class MainActivity : Activity() {
         root.addView(Button(this).apply { text = "Refresh approvals"; setOnClickListener { refreshApprovals() } })
         approvalsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(approvalsBox)
+        root.addView(TextView(this).apply { text = "Request an action"; textSize = 20f; setPadding(0, 20, 0, 0) })
+        val approvalName = EditText(this).apply { hint = "Tool name, e.g. gmail_send"; maxLines = 1 }
+        root.addView(approvalName)
+        val approvalParams = EditText(this).apply { hint = "Parameters as JSON"; setText("{}"); minLines = 3; gravity = android.view.Gravity.TOP }
+        root.addView(approvalParams)
+        val approvalSummary = EditText(this).apply { hint = "What should Kim do?"; maxLines = 2 }
+        root.addView(approvalSummary)
+        root.addView(Button(this).apply {
+            text = "Request approval"
+            setOnClickListener { requestApproval(approvalName.text.toString(), approvalParams.text.toString(), approvalSummary.text.toString()) }
+        })
         root.addView(Button(this).apply { text = "Check integrations"; setOnClickListener { refreshIntegrations() } })
         root.addView(Button(this).apply { text = "Start voice session"; setOnClickListener { startVoiceSession() } })
-        setContentView(root)
+        setContentView(ScrollView(this).apply { addView(root) })
     }
 
     private fun client() = KimClient(baseUrl, pin.text.toString().trim())
     private fun refresh() { executor.execute { val value = runCatching { client().getStatus() }.getOrElse { it.message ?: "connection failed" }; runOnUiThread { status.text = value } } }
     private fun refreshIntegrations() { executor.execute { val value = runCatching { client().getIntegrations() }.getOrElse { it.message ?: "request failed" }; runOnUiThread { status.text = value } } }
+    private fun requestApproval(name: String, rawParameters: String, summary: String) {
+        executor.execute {
+            val value = runCatching {
+                val parameters = JSONObject(rawParameters.ifBlank { "{}" })
+                client().requestApproval(name.trim(), parameters, summary.trim().ifBlank { "Requested from Android" })
+            }.getOrElse { it.message ?: "request failed" }
+            runOnUiThread { status.text = value; refreshApprovals() }
+        }
+    }
     private fun control(action: String) { executor.execute { val value = runCatching { client().control(action) }.getOrElse { it.message ?: "request failed" }; runOnUiThread { status.text = value } } }
     private fun refreshApprovals() {
         executor.execute {
