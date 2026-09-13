@@ -13,7 +13,7 @@ class KimClient(private val baseUrl: String, private val token: String) {
         val connection = (URL(baseUrl.trimEnd('/') + path).openConnection() as HttpURLConnection)
         connection.requestMethod = method
         connection.connectTimeout = 8000; connection.readTimeout = 12000
-        connection.setRequestProperty("Authorization", "Bearer $token")
+        connection.setRequestProperty("X-Kim-Pin", token)
         connection.setRequestProperty("Content-Type", "application/json")
         if (body != null) { connection.doOutput = true; connection.outputStream.use { it.write(body.toByteArray()) } }
         val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream

@@ -16,7 +16,7 @@ class MainActivity : Activity() {
         val key = MasterKey.Builder(this).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
         EncryptedSharedPreferences.create(this, "kim", key, EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV, EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
     }
-    private lateinit var token: EditText
+    private lateinit var pin: EditText
     private lateinit var status: TextView
     private val baseUrl = "https://app.vishalojha.me"
 
@@ -25,9 +25,9 @@ class MainActivity : Activity() {
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(32, 40, 32, 24) }
         TextView(this).apply { text = "Kim"; textSize = 32f }.also(root::addView)
         TextView(this).apply { text = "Android control panel"; textSize = 16f }.also(root::addView)
-        token = EditText(this).apply { hint = "KIM_REMOTE_TOKEN"; setText(prefs.getString("token", "")); inputType = 0x81 }
-        root.addView(token)
-        val save = Button(this).apply { text = "Save token and connect"; setOnClickListener { prefs.edit().putString("token", token.text.toString()).apply(); refresh() } }
+        pin = EditText(this).apply { hint = "Kim PIN"; setText(prefs.getString("pin", "")); inputType = 0x81; maxLines = 1 }
+        root.addView(pin)
+        val save = Button(this).apply { text = "Save PIN and connect"; setOnClickListener { prefs.edit().putString("pin", pin.text.toString()).apply(); refresh() } }
         root.addView(save)
         status = TextView(this).apply { text = "Not connected"; textSize = 15f; setPadding(0, 24, 0, 24) }
         root.addView(status)
@@ -40,7 +40,7 @@ class MainActivity : Activity() {
         setContentView(root)
     }
 
-    private fun client() = KimClient(baseUrl, token.text.toString().trim())
+    private fun client() = KimClient(baseUrl, pin.text.toString().trim())
     private fun refresh() { executor.execute { val value = runCatching { client().getStatus() }.getOrElse { it.message ?: "connection failed" }; runOnUiThread { status.text = value } } }
     private fun control(action: String) { executor.execute { val value = runCatching { client().control(action) }.getOrElse { it.message ?: "request failed" }; runOnUiThread { status.text = value } } }
     private fun refreshApprovals() { executor.execute { val value = runCatching { client().getApprovals() }.getOrElse { it.message ?: "request failed" }; runOnUiThread { status.text = value } } }
