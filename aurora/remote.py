@@ -49,6 +49,8 @@ class RemoteServer:
         self.audit_path = Path(str(remote.get("audit_path", "~/.aurora/remote-audit.jsonl"))).expanduser()
         self.approvals: Dict[str, Dict[str, Any]] = {}
         self.approvals_lock = threading.Lock()
+        self.commands: list[str] = []
+        self.commands_lock = threading.Lock()
         self.server: Optional[ThreadingHTTPServer] = None
         self.thread: Optional[threading.Thread] = None
 
@@ -125,6 +127,11 @@ class RemoteServer:
                         items = [dict(v, parameters=None) for v in owner.approvals.values()]
                     self._reply(200, {"ok": True, "approvals": items})
                     return
+                if self.path == "/v1/commands/next":
+                    with owner.commands_lock:
+                        action = owner.commands.pop(0) if owner.commands else None
+                    self._reply(200, {"ok": True, "action": action})
+                    return
                 self._reply(404, {"error": "not found"})
 
             def _dashboard(self) -> None:
@@ -147,6 +154,8 @@ class RemoteServer:
                             raise ValueError("action must be pause or wake")
                         owner.control_path.parent.mkdir(parents=True, exist_ok=True)
                         owner.control_path.write_text(action)
+                        with owner.commands_lock:
+                            owner.commands.append(action)
                         owner._audit("control", {"action": action}, True)
                         self._reply(200, {"ok": True, "action": action})
                         return

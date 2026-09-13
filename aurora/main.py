@@ -87,6 +87,7 @@ async def run_voice(cfg: Dict[str, Any]) -> None:
     tasks = [
         asyncio.create_task(session.run_forever(), name="voice"),
         asyncio.create_task(watcher.run(), name="watcher"),
+        asyncio.create_task(_remote_command_loop(cfg), name="remote-command-relay"),
     ]
     print("Kim voice agent starting. Ctrl-C to stop.")
     stop_ev = asyncio.Event()
@@ -111,6 +112,34 @@ async def run_voice(cfg: Dict[str, Any]) -> None:
         remote.stop()
         await capture.stop()
         await output.close()
+
+
+async def _remote_command_loop(cfg: Dict[str, Any]) -> None:
+    """Pull commands from the cloud control plane into the local voice session."""
+    import httpx
+
+    remote = cfg.get("remote", {})
+    domain = str(remote.get("domain", "")).strip().rstrip("/")
+    pin_env = str(remote.get("pin_env", "KIM_REMOTE_PIN"))
+    pin = os.environ.get(pin_env, "").strip()
+    if not domain or not pin:
+        log.warning("remote command relay disabled: domain or KIM_REMOTE_PIN missing")
+        return
+    command_path = Path.home() / ".aurora" / "voice_command"
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        while True:
+            try:
+                response = await client.get(f"https://{domain}/v1/commands/next", headers={"X-Kim-Pin": pin})
+                if response.is_success:
+                    action = (response.json() or {}).get("action")
+                    if action in {"pause", "wake"}:
+                        command_path.parent.mkdir(parents=True, exist_ok=True)
+                        command_path.write_text(action)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                log.debug("remote command relay unavailable: %s", exc)
+            await asyncio.sleep(2)
 
 
 async def run_watch(cfg: Dict[str, Any]) -> None:
