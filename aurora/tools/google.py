@@ -3,6 +3,7 @@
 import base64
 import json
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -188,3 +189,112 @@ def calendar_create(title: str, start: str, end: str, description: str = "") -> 
         body={"summary": title, "description": description, "start": {"dateTime": start}, "end": {"dateTime": end}},
     ).execute()
     return f"created calendar event: {event.get('summary', title)} ({event.get('htmlLink', '')})"
+
+
+def _header(message: dict[str, Any], name: str) -> str:
+    return next(
+        (h.get("value", "") for h in message.get("payload", {}).get("headers", [])
+         if h.get("name", "").lower() == name.lower()),
+        "",
+    )
+
+
+def _email_addresses(value: str) -> list[str]:
+    return [item.lower() for item in re.findall(r"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}", value, re.I)]
+
+
+@tool(
+    "gmail_today",
+    "Give a compact daily briefing from today's Gmail messages and upcoming calendar events. Read-only.",
+    {"max_emails": {"type": "integer", "description": "maximum email messages, default 20", "required": False}},
+    timeout=45,
+)
+def gmail_today(max_emails: int = 20) -> str:
+    services, error = _services()
+    if error:
+        return error
+    gmail = services["gmail"]
+    calendar = services["calendar"]
+    day = datetime.now().astimezone().strftime("%Y/%m/%d")
+    items = gmail.users().messages().list(userId="me", q=f"after:{day}", maxResults=max(1, min(int(max_emails), 50))).execute().get("messages", [])
+    rows = ["TODAY'S EMAILS"]
+    for item in items:
+        msg = gmail.users().messages().get(userId="me", id=item["id"], format="metadata", metadataHeaders=["Subject", "From", "Date"]).execute()
+        rows.append(f"- {_header(msg, 'subject') or '(no subject)'} | {_header(msg, 'from')} | {_header(msg, 'date')}")
+    now = datetime.now(timezone.utc)
+    events = calendar.events().list(
+        calendarId="primary", timeMin=now.isoformat(), timeMax=(now + timedelta(days=1)).isoformat(),
+        singleEvents=True, orderBy="startTime", maxResults=50,
+    ).execute().get("items", [])
+    rows.append("TODAY'S CALENDAR")
+    for event in events:
+        start = event.get("start", {}).get("dateTime") or event.get("start", {}).get("date", "")
+        rows.append(f"- {start} | {event.get('summary', '(untitled)')}")
+    return "\n".join(rows) if len(rows) > 2 else "nothing found for today"
+
+
+@tool(
+    "gmail_unanswered",
+    "Find recent email threads where the latest message is from someone else and Vishal has not replied. Read-only.",
+    {
+        "days": {"type": "integer", "description": "look-back window, default 120 days", "required": False},
+        "max_results": {"type": "integer", "description": "maximum threads, default 20", "required": False},
+    },
+    timeout=60,
+)
+def gmail_unanswered(days: int = 120, max_results: int = 20) -> str:
+    services, error = _services()
+    if error:
+        return error
+    gmail = services["gmail"]
+    profile = gmail.users().getProfile(userId="me").execute()
+    mine = str(profile.get("emailAddress", "")).lower()
+    candidates = gmail.users().messages().list(
+        userId="me", q=f"-from:me newer_than:{max(1, min(int(days), 365))}d",
+        maxResults=max(1, min(int(max_results) * 4, 100)),
+    ).execute().get("messages", [])
+    seen: set[str] = set()
+    rows = []
+    for item in candidates:
+        thread_id = item.get("threadId", "")
+        if not thread_id or thread_id in seen:
+            continue
+        seen.add(thread_id)
+        thread = gmail.users().threads().get(userId="me", id=thread_id, format="metadata", metadataHeaders=["Subject", "From", "Date"]).execute()
+        messages = thread.get("messages", [])
+        if not messages:
+            continue
+        latest = messages[-1]
+        sender = _header(latest, "from")
+        if mine and mine in _email_addresses(sender):
+            continue
+        rows.append(f"{thread_id} | {_header(latest, 'date')} | {sender} | {_header(latest, 'subject') or '(no subject)'}")
+        if len(rows) >= max(1, min(int(max_results), 50)):
+            break
+    return "\n".join(rows) if rows else "no unanswered email threads found"
+
+
+@tool(
+    "gmail_contacts",
+    "Extract the most frequent email contacts from recent Gmail headers. Read-only; no separate CRM database is created.",
+    {
+        "max_emails": {"type": "integer", "description": "messages to scan, default 200", "required": False},
+        "max_contacts": {"type": "integer", "description": "contacts to return, default 25", "required": False},
+    },
+    timeout=60,
+)
+def gmail_contacts(max_emails: int = 200, max_contacts: int = 25) -> str:
+    services, error = _services()
+    if error:
+        return error
+    gmail = services["gmail"]
+    mine = str(gmail.users().getProfile(userId="me").execute().get("emailAddress", "")).lower()
+    messages = gmail.users().messages().list(userId="me", q="newer_than:365d", maxResults=max(1, min(int(max_emails), 500))).execute().get("messages", [])
+    counts: dict[str, int] = {}
+    for item in messages:
+        msg = gmail.users().messages().get(userId="me", id=item["id"], format="metadata", metadataHeaders=["From", "To", "Cc"]).execute()
+        for address in _email_addresses(" ".join(_header(msg, h) for h in ("from", "to", "cc"))):
+            if address != mine:
+                counts[address] = counts.get(address, 0) + 1
+    rows = [f"{email} | {count} messages" for email, count in sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))[:max(1, min(int(max_contacts), 100))]]
+    return "\n".join(rows) if rows else "no contacts found"
