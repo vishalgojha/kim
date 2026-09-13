@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .registry import tool
+from . import composio
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -84,6 +85,12 @@ def _services():
     timeout=30,
 )
 def gmail_search(query: str, max_results: int = 10) -> str:
+    if composio.enabled():
+        return composio.text(composio.execute(
+            "GMAIL_FETCH_EMAILS",
+            {"query": query, "max_results": max(1, min(int(max_results), 50)), "verbose": False},
+            "COMPOSIO_GMAIL_ACCOUNT_ID",
+        ))
     services, error = _services()
     if error:
         return error
@@ -130,6 +137,12 @@ def gmail_read(message_id: str) -> str:
 def gmail_send(to: str, subject: str, body: str, confirm: str = "") -> str:
     if confirm.strip().lower() != "yes":
         return f"Sending is paused for confirmation. Draft recipient={to}, subject={subject!r}, body_length={len(body)}. Ask Vishal to confirm, then retry with confirm='yes'."
+    if composio.enabled():
+        return composio.text(composio.execute(
+            "GMAIL_SEND_EMAIL",
+            {"recipient_email": to, "subject": subject, "body": body, "user_id": "me"},
+            "COMPOSIO_GMAIL_ACCOUNT_ID",
+        ))
     services, error = _services()
     if error:
         return error
@@ -154,6 +167,13 @@ def _body_text(part: dict[str, Any]) -> str:
     timeout=30,
 )
 def calendar_upcoming(days: int = 7) -> str:
+    if composio.enabled():
+        now = datetime.now().astimezone()
+        return composio.text(composio.execute(
+            "GOOGLECALENDAR_FIND_FREE_SLOTS",
+            {"time_min": now.isoformat(), "time_max": (now + timedelta(days=max(1, min(int(days), 90)))).isoformat()},
+            "COMPOSIO_CALENDAR_ACCOUNT_ID",
+        ))
     services, error = _services()
     if error:
         return error
@@ -185,6 +205,12 @@ def calendar_upcoming(days: int = 7) -> str:
     timeout=30,
 )
 def calendar_create(title: str, start: str, end: str, description: str = "") -> str:
+    if composio.enabled():
+        return composio.text(composio.execute(
+            "GOOGLECALENDAR_CREATE_EVENT",
+            {"summary": title, "start_datetime": start, "end_datetime": end, "description": description, "calendar_id": "primary"},
+            "COMPOSIO_CALENDAR_ACCOUNT_ID",
+        ))
     services, error = _services()
     if error:
         return error

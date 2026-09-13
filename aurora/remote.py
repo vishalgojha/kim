@@ -397,8 +397,10 @@ class RemoteServer:
 
     def _can_execute_direct(self, name: str) -> bool:
         """Only use cloud execution when that connector's secret is present."""
-        if name in {"gmail_send", "calendar_create", "gmail_search", "gmail_read", "calendar_upcoming", "gmail_today", "gmail_unanswered", "gmail_contacts"}:
-            return bool(os.environ.get("GOOGLE_TOKEN_JSON", "").strip()) or Path(os.environ.get("GOOGLE_TOKEN_PATH", "~/.aurora/google-token.json")).expanduser().exists()
+        if name in {"gmail_send", "gmail_search", "gmail_read", "gmail_today", "gmail_unanswered", "gmail_contacts"}:
+            return (bool(os.environ.get("COMPOSIO_API_KEY", "").strip()) and bool(os.environ.get("COMPOSIO_GMAIL_ACCOUNT_ID", "").strip())) or bool(os.environ.get("GOOGLE_TOKEN_JSON", "").strip()) or Path(os.environ.get("GOOGLE_TOKEN_PATH", "~/.aurora/google-token.json")).expanduser().exists()
+        if name in {"calendar_create", "calendar_upcoming"}:
+            return (bool(os.environ.get("COMPOSIO_API_KEY", "").strip()) and bool(os.environ.get("COMPOSIO_CALENDAR_ACCOUNT_ID", "").strip())) or bool(os.environ.get("GOOGLE_TOKEN_JSON", "").strip()) or Path(os.environ.get("GOOGLE_TOKEN_PATH", "~/.aurora/google-token.json")).expanduser().exists()
         if name == "whatsapp_send":
             return bool(os.environ.get("WHATSAPP_CLOUD_API_TOKEN", "").strip() and os.environ.get("WHATSAPP_CLOUD_PHONE_NUMBER_ID", "").strip())
         return True
