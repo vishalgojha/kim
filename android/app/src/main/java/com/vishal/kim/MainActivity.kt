@@ -32,23 +32,28 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         scheduleApprovalWatcher()
         if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 6)
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 38, 24, 28) }
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER_HORIZONTAL; setPadding(24, 36, 24, 22) }
         pin = EditText(this).apply { setText(prefs.getString("pin", "")) }
-        TextView(this).apply { text = "Kim"; textSize = 36f }.also(root::addView)
-        TextView(this).apply { text = "Good to see you. What can I take care of?"; textSize = 18f; setPadding(0, 4, 0, 24) }.also(root::addView)
-        status = TextView(this).apply { text = "Ready when you are"; textSize = 15f; setPadding(0, 12, 0, 12) }
+        TextView(this).apply { text = "Kim"; textSize = 30f; gravity = android.view.Gravity.CENTER }.also(root::addView)
+        TextView(this).apply { text = "Your personal AI companion"; textSize = 15f; gravity = android.view.Gravity.CENTER; setPadding(0, 2, 0, 8) }.also(root::addView)
+        root.addView(KimOrbView(this), LinearLayout.LayoutParams(-1, 230))
+        TextView(this).apply { text = "How can I\nhelp you today?"; textSize = 31f; gravity = android.view.Gravity.CENTER; setTextColor(Color.rgb(24, 24, 40)); setPadding(0, 4, 0, 18) }.also(root::addView)
+        status = TextView(this).apply { text = "Ready when you are"; textSize = 14f; gravity = android.view.Gravity.CENTER; setPadding(0, 8, 0, 8) }
         root.addView(status)
         root.addView(Button(this).apply { text = "Talk to Kim"; setOnClickListener { startListening() } })
-        root.addView(TextView(this).apply { text = "Try asking"; textSize = 21f; setPadding(0, 20, 0, 8) })
-        root.addView(Button(this).apply { text = "Show me today's priorities"; setOnClickListener { runQuickAction("gmail_today", "Checking your day…") } })
-        root.addView(Button(this).apply { text = "What's on my calendar?"; setOnClickListener { runQuickAction("calendar_upcoming", "Checking your calendar…") } })
+        root.addView(TextView(this).apply { text = "Try asking"; textSize = 15f; setPadding(0, 8, 0, 5) })
+        val suggestions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER }
+        suggestions.addView(Button(this).apply { text = "My day"; setOnClickListener { runQuickAction("gmail_today", "Checking your day…") } })
+        suggestions.addView(Button(this).apply { text = "Calendar"; setOnClickListener { runQuickAction("calendar_upcoming", "Checking your calendar…") } })
+        root.addView(suggestions)
         root.addView(Button(this).apply { text = "Help me send an email"; setOnClickListener { showEmailDialog() } })
-        root.addView(TextView(this).apply { text = "Requests"; textSize = 21f; setPadding(0, 20, 0, 8) })
+        root.addView(TextView(this).apply { text = "Requests"; textSize = 19f; setPadding(0, 10, 0, 4) })
         approvalsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(approvalsBox)
         root.addView(Button(this).apply { text = "Review requests"; setOnClickListener { refreshApprovals() } })
         root.addView(Button(this).apply { text = "Settings"; setOnClickListener { showSettings() } })
-        val screen = ScrollView(this).apply { setBackgroundColor(Color.BLACK); addView(root) }
+        root.addView(TextView(this).apply { text = "⌂        ✦        ◷        ⚙"; textSize = 24f; gravity = android.view.Gravity.CENTER; setPadding(0, 18, 0, 0) })
+        val screen = ScrollView(this).apply { setBackgroundColor(Color.rgb(245, 249, 250)); addView(root) }
         theme(screen)
         setContentView(screen)
         if (prefs.getString("pin", "").isNullOrBlank()) showSettings()
