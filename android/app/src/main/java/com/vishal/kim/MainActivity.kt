@@ -6,16 +6,11 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.*
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
     private val executor = Executors.newSingleThreadExecutor()
-    private val prefs by lazy {
-        val key = MasterKey.Builder(this).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
-        EncryptedSharedPreferences.create(this, "kim", key, EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV, EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
-    }
+    private val prefs by lazy { KimPrefs.open(this) }
     private lateinit var pin: EditText
     private lateinit var status: TextView
     private val baseUrl = "https://app.vishalojha.me"
@@ -35,7 +30,8 @@ class MainActivity : Activity() {
         row.addView(Button(this).apply { text = "Pause"; setOnClickListener { control("pause") } }, LinearLayout.LayoutParams(0, -2, 1f))
         row.addView(Button(this).apply { text = "Wake"; setOnClickListener { control("wake") } }, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(row)
-        root.addView(Button(this).apply { text = "Start listening service"; setOnClickListener { startListening() } })
+        root.addView(Button(this).apply { text = "Start Kim voice"; setOnClickListener { startListening() } })
+        root.addView(Button(this).apply { text = "Stop Kim voice"; setOnClickListener { stopService(Intent(this@MainActivity, KimVoiceService::class.java)) } })
         root.addView(Button(this).apply { text = "Refresh approvals"; setOnClickListener { refreshApprovals() } })
         root.addView(Button(this).apply { text = "Start voice session"; setOnClickListener { startVoiceSession() } })
         setContentView(root)
@@ -48,6 +44,6 @@ class MainActivity : Activity() {
     private fun startVoiceSession() { executor.execute { val value = runCatching { client().getVoiceSession() }.getOrElse { it.message ?: "voice unavailable" }; runOnUiThread { status.text = value } } }
     private fun startListening() {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 5)
-        else startForegroundService(Intent(this, KimForegroundService::class.java))
+        else startForegroundService(Intent(this, KimVoiceService::class.java))
     }
 }
