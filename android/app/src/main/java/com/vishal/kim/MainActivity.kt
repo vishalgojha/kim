@@ -2,6 +2,7 @@ package com.vishal.kim
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -25,37 +26,27 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         scheduleApprovalWatcher()
         if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 6)
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(32, 40, 32, 24) }
-        TextView(this).apply { text = "Kim"; textSize = 32f }.also(root::addView)
-        TextView(this).apply { text = "Android control panel"; textSize = 16f }.also(root::addView)
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 32, 24, 24) }
+        TextView(this).apply { text = "Kim"; textSize = 34f }.also(root::addView)
+        TextView(this).apply { text = "Your personal assistant"; textSize = 17f }.also(root::addView)
         pin = EditText(this).apply { hint = "Kim PIN"; setText(prefs.getString("pin", "")); inputType = 0x81; maxLines = 1 }
         root.addView(pin)
-        val save = Button(this).apply { text = "Save PIN and connect"; setOnClickListener { prefs.edit().putString("pin", pin.text.toString()).apply(); refresh() } }
+        val save = Button(this).apply { text = "Connect"; setOnClickListener { prefs.edit().putString("pin", pin.text.toString()).apply(); refresh() } }
         root.addView(save)
-        status = TextView(this).apply { text = "Not connected"; textSize = 15f; setPadding(0, 24, 0, 24) }
+        status = TextView(this).apply { text = "Not connected"; textSize = 16f; setPadding(0, 16, 0, 16) }
         root.addView(status)
+        root.addView(Button(this).apply { text = "Talk to Kim"; setOnClickListener { startListening() } })
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         row.addView(Button(this).apply { text = "Pause"; setOnClickListener { control("pause") } }, LinearLayout.LayoutParams(0, -2, 1f))
         row.addView(Button(this).apply { text = "Wake"; setOnClickListener { control("wake") } }, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(row)
-        root.addView(Button(this).apply { text = "Start Kim voice"; setOnClickListener { startListening() } })
-        root.addView(Button(this).apply { text = "Stop Kim voice"; setOnClickListener { stopService(Intent(this@MainActivity, KimVoiceService::class.java)) } })
+        root.addView(TextView(this).apply { text = "Approvals"; textSize = 22f; setPadding(0, 22, 0, 4) })
         root.addView(Button(this).apply { text = "Refresh approvals"; setOnClickListener { refreshApprovals() } })
         approvalsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(approvalsBox)
-        root.addView(TextView(this).apply { text = "Request an action"; textSize = 20f; setPadding(0, 20, 0, 0) })
-        val approvalName = EditText(this).apply { hint = "Tool name, e.g. gmail_send"; maxLines = 1 }
-        root.addView(approvalName)
-        val approvalParams = EditText(this).apply { hint = "Parameters as JSON"; setText("{}"); minLines = 3; gravity = android.view.Gravity.TOP }
-        root.addView(approvalParams)
-        val approvalSummary = EditText(this).apply { hint = "What should Kim do?"; maxLines = 2 }
-        root.addView(approvalSummary)
-        root.addView(Button(this).apply {
-            text = "Request approval"
-            setOnClickListener { requestApproval(approvalName.text.toString(), approvalParams.text.toString(), approvalSummary.text.toString()) }
-        })
+        root.addView(Button(this).apply { text = "Request an action"; setOnClickListener { showRequestDialog() } })
         root.addView(Button(this).apply { text = "Check integrations"; setOnClickListener { refreshIntegrations() } })
-        root.addView(Button(this).apply { text = "Start voice session"; setOnClickListener { startVoiceSession() } })
+        root.addView(Button(this).apply { text = "Stop listening"; setOnClickListener { stopService(Intent(this@MainActivity, KimVoiceService::class.java)) } })
         setContentView(ScrollView(this).apply { addView(root) })
     }
 
@@ -70,6 +61,19 @@ class MainActivity : Activity() {
             }.getOrElse { it.message ?: "request failed" }
             runOnUiThread { status.text = value; refreshApprovals() }
         }
+    }
+    private fun showRequestDialog() {
+        val form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 0, 24, 0) }
+        val name = EditText(this).apply { hint = "Action (e.g. send email)" }
+        val parameters = EditText(this).apply { hint = "Details as JSON (optional)"; setText("{}"); minLines = 3; gravity = android.view.Gravity.TOP }
+        val summary = EditText(this).apply { hint = "What should Kim do?" }
+        form.addView(name); form.addView(parameters); form.addView(summary)
+        AlertDialog.Builder(this)
+            .setTitle("Request approval")
+            .setView(form)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Submit") { _, _ -> requestApproval(name.text.toString(), parameters.text.toString(), summary.text.toString()) }
+            .show()
     }
     private fun control(action: String) { executor.execute { val value = runCatching { client().control(action) }.getOrElse { it.message ?: "request failed" }; runOnUiThread { status.text = value } } }
     private fun refreshApprovals() {
