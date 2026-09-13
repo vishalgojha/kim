@@ -52,8 +52,8 @@ class RemoteServer:
         self.control_path = control_path
         self.speak = speak
         self.voice_url = voice_url
-        self.audit_path = Path(str(remote.get("audit_path", "~/.aurora/remote-audit.jsonl"))).expanduser()
-        self.state_path = Path(str(remote.get("state_path", "~/.aurora/remote-state.json"))).expanduser()
+        self.audit_path = Path(os.environ.get("KIM_REMOTE_AUDIT_PATH", str(remote.get("audit_path", "~/.aurora/remote-audit.jsonl")))).expanduser()
+        self.state_path = Path(os.environ.get("KIM_REMOTE_STATE_PATH", str(remote.get("state_path", "~/.aurora/remote-state.json")))).expanduser()
         self.approvals: Dict[str, Dict[str, Any]] = {}
         self.approvals_lock = threading.Lock()
         self.commands: list[Dict[str, Any]] = []
