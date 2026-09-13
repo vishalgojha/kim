@@ -32,11 +32,13 @@ def sh(cmd, timeout=130):
 class KimButton(Gtk.Window):
     def __init__(self):
         Gtk.Window.__init__(self, title="Kim")
+        # Keep GNOME’s dock/taskbar grouping under Kim instead of panel.py.
+        self.set_wmclass("Kim", "Kim")
         self.set_decorated(False)
-        self.set_skip_taskbar_hint(True)
+        self.set_skip_taskbar_hint(False)
         self.set_keep_above(True)
         self.set_resizable(False)
-        self.set_default_size(136, 136)
+        self.set_default_size(300, 72)
         self.set_position(Gtk.WindowPosition.NONE)
         screen = Gdk.Screen.get_default()
         if screen:
@@ -45,7 +47,7 @@ class KimButton(Gtk.Window):
                 self.set_visual(visual)
         self.set_app_paintable(True)
 
-        self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self.box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.set_name("kim-window")
         self.box.set_name("kim-container")
         self.add(self.box)
@@ -53,20 +55,21 @@ class KimButton(Gtk.Window):
         css = Gtk.CssProvider()
         css.load_from_data(b"""
         #kim-window, #kim-container {
-            background-color: transparent;
+            background-color: rgba(13, 14, 20, 0.96);
+            border-radius: 18px;
         }
         #kim-orb-shell {
             background-color: rgba(46, 54, 150, 0.45);
             border: 1px solid rgba(151, 160, 255, 0.65);
-            border-radius: 999px;
-            padding: 7px;
+            border-radius: 16px;
+            padding: 3px;
         }
         #kim-orb {
             background-color: #343bff;
             border: 2px solid #a5afff;
-            border-radius: 999px;
-            min-width: 78px;
-            min-height: 78px;
+            border-radius: 14px;
+            min-width: 48px;
+            min-height: 48px;
         }
         #kim-orb.active {
             background-color: #693cff;
@@ -81,7 +84,7 @@ class KimButton(Gtk.Window):
             border-color: #7d8297;
         }
         #kim-orb label { color: #ffffff; font-weight: bold; }
-        #kim-status { color: #c7ccff; font-size: 9px; font-weight: bold; }
+        #kim-status { color: #c7ccff; font-size: 10px; font-weight: bold; }
         """)
         Gtk.StyleContext.add_provider_for_screen(
             Gdk.Screen.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
@@ -93,19 +96,19 @@ class KimButton(Gtk.Window):
         self.drag_handle = Gtk.EventBox()
         self.drag_handle.add(Gtk.Label(label="⠿"))
         self.drag_handle.set_tooltip_text("Drag Kim anywhere")
-        self.drag_handle.set_size_request(20, 76)
+        self.drag_handle.set_size_request(14, 56)
         self.drag_handle.connect("button-press-event", self._start_drag)
         self.orb_row.pack_start(self.drag_handle, False, False, 0)
 
         self.shell = Gtk.EventBox()
         self.shell.set_name("kim-orb-shell")
-        self.shell.set_size_request(96, 96)
+        self.shell.set_size_request(58, 58)
 
         self.btn = Gtk.EventBox()
         self.btn.set_name("kim-orb")
         self.orb_image = Gtk.Image.new_from_file(str(ORB_ASSET))
         self.btn.add(self.orb_image)
-        self.btn.set_size_request(80, 80)
+        self.btn.set_size_request(50, 50)
         self.shell.add(self.btn)
         self.orb_row.pack_start(self.shell, True, True, 0)
         self.btn.connect("button-press-event", self.on_clicked)
@@ -240,9 +243,9 @@ class KimButton(Gtk.Window):
 
     def do_stop(self):
         self._close_popover()
-        self._toast("stopping Kim…")
+        self._toast("pausing Kim…")
         self._background(lambda: (lambda r: (r.stdout or r.stderr or "Kim stopped").strip())(
-            sh(["bash", f"{KIM_ROOT}/service.sh", "stop"])
+            sh(["bash", f"{KIM_ROOT}/service.sh", "pause"])
         ))
 
     def do_say(self):
@@ -297,7 +300,7 @@ class KimButton(Gtk.Window):
             self.show_all()
             return
         geo = monitor.get_geometry()
-        w, h = 136, 136
+        w, h = 300, 72
         self.move(geo.x + (geo.width - w) // 2, geo.y + 38)
         self.show_all()
 
