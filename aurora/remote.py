@@ -130,6 +130,17 @@ class RemoteServer:
                         state = "offline"
                     self._reply(200, {"ok": True, "voice_state": state, "allowed_tools": sorted(owner.allowed_tools), "direct_tools": sorted(owner.direct_tools)})
                     return
+                if self.path == "/v1/integrations":
+                    google_ready = bool(os.environ.get("GOOGLE_TOKEN_JSON", "").strip())
+                    whatsapp_ready = bool(os.environ.get("WHATSAPP_CLOUD_API_TOKEN", "").strip() and os.environ.get("WHATSAPP_CLOUD_PHONE_NUMBER_ID", "").strip())
+                    self._reply(200, {"ok": True, "integrations": {
+                        "gmail": {"cloud": google_ready, "laptop_fallback": True},
+                        "calendar": {"cloud": google_ready, "laptop_fallback": True},
+                        "whatsapp": {"cloud": whatsapp_ready, "laptop_fallback": True},
+                        "laptop_control": {"cloud": False, "laptop_fallback": True},
+                        "banking": {"enabled": False},
+                    }})
+                    return
                 if self.path == "/v1/approvals":
                     with owner.approvals_lock:
                         items = [dict(v, parameters=None) for v in owner.approvals.values()]

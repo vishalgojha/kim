@@ -6,6 +6,7 @@ import org.json.JSONObject
 
 class KimClient(private val baseUrl: String, private val token: String) {
     fun getStatus(): String = request("GET", "/v1/status")
+    fun getIntegrations(): String = request("GET", "/v1/integrations")
     fun getApprovals(): String = request("GET", "/v1/approvals")
     fun getVoiceSession(): String = request("GET", "/v1/voice/session")
     fun control(action: String): String = request("POST", "/v1/control", "{\"action\":\"$action\"}")

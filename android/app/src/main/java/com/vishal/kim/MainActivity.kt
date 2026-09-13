@@ -43,12 +43,14 @@ class MainActivity : Activity() {
         root.addView(Button(this).apply { text = "Refresh approvals"; setOnClickListener { refreshApprovals() } })
         approvalsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(approvalsBox)
+        root.addView(Button(this).apply { text = "Check integrations"; setOnClickListener { refreshIntegrations() } })
         root.addView(Button(this).apply { text = "Start voice session"; setOnClickListener { startVoiceSession() } })
         setContentView(root)
     }
 
     private fun client() = KimClient(baseUrl, pin.text.toString().trim())
     private fun refresh() { executor.execute { val value = runCatching { client().getStatus() }.getOrElse { it.message ?: "connection failed" }; runOnUiThread { status.text = value } } }
+    private fun refreshIntegrations() { executor.execute { val value = runCatching { client().getIntegrations() }.getOrElse { it.message ?: "request failed" }; runOnUiThread { status.text = value } } }
     private fun control(action: String) { executor.execute { val value = runCatching { client().control(action) }.getOrElse { it.message ?: "request failed" }; runOnUiThread { status.text = value } } }
     private fun refreshApprovals() {
         executor.execute {
