@@ -20,7 +20,8 @@ class KimVoiceService : Service() {
     private var recording = false
     private val readOnlyTools = setOf(
         "battery", "disk_usage", "known_apps", "running_processes", "system_info",
-        "gmail_search", "gmail_read", "calendar_upcoming", "whatsapp_search", "whatsapp_recent", "whatsapp_chats"
+        "gmail_search", "gmail_read", "gmail_today", "gmail_unanswered", "gmail_contacts",
+        "calendar_upcoming", "whatsapp_search", "whatsapp_recent", "whatsapp_chats"
     )
 
     override fun onCreate() {
