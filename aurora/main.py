@@ -81,6 +81,10 @@ async def run_voice(cfg: Dict[str, Any]) -> None:
 
     watcher = Watcher(cfg, notifier)
     session = RealtimeSession(cfg, eleven, REGISTRY, capture, output)
+    allowed_tools = os.environ.get("KIM_REMOTE_ALLOWED_TOOLS", "").strip()
+    if allowed_tools:
+        cfg["remote"] = dict(cfg.get("remote") or {})
+        cfg["remote"]["allowed_tools"] = [item.strip() for item in allowed_tools.split(",") if item.strip()]
     remote = RemoteServer(cfg, REGISTRY, asyncio.get_running_loop(), Path.home() / ".aurora" / "voice_command", speaker.speak)
     remote.start()
 
@@ -183,6 +187,14 @@ async def run_remote(cfg: Dict[str, Any]) -> None:
         cfg["remote"]["allowed_tools"] = [item.strip() for item in allowed_tools.split(",") if item.strip()]
     _build_context(cfg)
     eleven = ElevenAPI(cfg) if cfg["elevenlabs"].get("api_key") and cfg["elevenlabs"].get("agent_id") else None
+    if eleven:
+        # Keep the hosted ElevenLabs agent aligned with Kim's local registry and
+        # Onyx-like operating prompt. Eleven remains the conversational brain;
+        # Kim owns the tools, approvals, memory, and device routing.
+        try:
+            ensure_agent(cfg, eleven)
+        except ElevenError:
+            log.exception("could not sync hosted ElevenLabs agent; using existing version")
     voice_url = (lambda: eleven.get_signed_url(cfg["elevenlabs"]["agent_id"])) if eleven else None
     remote = RemoteServer(cfg, REGISTRY, asyncio.get_running_loop(), Path.home() / ".aurora" / "voice_command", voice_url=voice_url)
     remote.start()
