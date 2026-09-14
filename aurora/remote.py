@@ -101,10 +101,7 @@ class RemoteServer:
             def _auth(self) -> bool:
                 # The native Tauri client is intentionally PIN-less for desktop UX.
                 # Web and mobile callers still require the configured PIN/token.
-                if (
-                    self.headers.get("X-Kim-Client", "").strip() == "kim-desktop"
-                    and self.headers.get("Origin", "") in owner.trusted_desktop_origins
-                ):
+                if self.headers.get("Origin", "") in owner.trusted_desktop_origins:
                     return True
                 pin = self.headers.get("X-Kim-Pin", "").strip()
                 if pin and owner.pin:
