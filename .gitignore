@@ -1,6 +1,9 @@
 .venv/
 __pycache__/
 *.pyc
+desktop/node_modules/
+desktop/dist/
+desktop/src-tauri/target/
 .env
 credentials.json
 token.json
