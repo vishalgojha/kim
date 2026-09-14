@@ -1,6 +1,6 @@
 # Kim
 
-Kim is a voice-driven, agentic layer for your laptop. The **brain runs on an ElevenLabs-hosted conversational agent** (STT + planning + TTS), and your laptop executes things locally through ~30 client tools. Kim can:
+Kim is a consumer-friendly, agentic layer for your devices. Kim owns the planning loop, tool registry, approvals, memory, and device routing. A configurable LLM powers reasoning; ElevenLabs is optional voice (STT/TTS) only. Kim can:
 
 - **Control the laptop by voice** — run shell commands, files, apps, volume, clipboard, screenshots, notifications. Sensitive commands need a verbal "yes".
 - **Handle long-running tasks** — spawn background jobs (`start_task`), monitor logs, cancel them.
@@ -26,7 +26,7 @@ Kim is a voice-driven, agentic layer for your laptop. The **brain runs on an Ele
 
 ```bash
 cd ~/aurora
-./run.sh setup        # 1. creates the ElevenLabs agent (30 tools) & saves agent_id to config.yaml
+./run.sh setup        # 1. configures optional ElevenLabs voice
 ./run.sh test         # 2. connectivity + tool inventory check
 ./run.sh voice        # 3. live: just talk. Ctrl-C to stop
 ./run.sh watch        # background-only mode (alerts + schedules, no mic)
@@ -41,6 +41,11 @@ On first run you need your key:
 ```bash
 cp .env.example .env        # then edit .env → ELEVENLABS_API_KEY=sk_...
 ```
+
+For Kim's hosted text brain, add `KIM_LLM_API_KEY` to Coolify. The default
+endpoint uses Gemini's OpenAI-compatible API; `KIM_LLM_BASE_URL` and
+`KIM_LLM_MODEL` can point to another compatible provider. Web and Android use
+`/v1/chat`; side effects always enter Kim's approval queue.
 
 Prereqs: Python 3.11+, `ffmpeg`, and a working audio device. Linux can use `parec`/PulseAudio; macOS and Windows use the `sounddevice` fallback. `opencode` is optional, for the coding tool.
 
@@ -119,7 +124,7 @@ Everything lives in `config.yaml` (created from built-in defaults on first run):
 | `elevenlabs.region` | `""` (prod) / `us` / `eu` / `in` / `sg` |
 | `elevenlabs.tts_model` | proactive alert voice (`eleven_multilingual_v2`) |
 | `elevenlabs.conversational_tts_model` | in-conversation voice (`eleven_flash_v2`) |
-| `agent.llm` | ElevenLabs-hosted brain, e.g. `gpt-5-mini` |
+| `agent.llm` | legacy voice-agent setting; text reasoning uses `KIM_LLM_*` |
 | `agent.first_message` | opening line |
 | `agent.prompt` / `prompt_file` | system prompt |
 | `audio.*` | mic/sink devices, sample rate |

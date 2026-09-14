@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Optional
 from urllib.parse import parse_qs, urlencode, urlparse
 
+from .agent import AgentCore
 from .tools.registry import ToolRegistry
 
 log = logging.getLogger("aurora.remote")
@@ -61,6 +62,7 @@ class RemoteServer:
         self.device_commands: list[Dict[str, Any]] = []
         self.devices: Dict[str, Dict[str, Any]] = {}
         self.google_states: Dict[str, float] = {}
+        self.agent = AgentCore(registry)
         self.commands_lock = threading.Lock()
         self._load_state()
         self.server: Optional[ThreadingHTTPServer] = None
@@ -161,7 +163,7 @@ class RemoteServer:
                         state = state_path.read_text().strip()
                     except OSError:
                         state = "offline"
-                    self._reply(200, {"ok": True, "voice_state": state, "allowed_tools": sorted(owner.allowed_tools), "direct_tools": sorted(owner.direct_tools)})
+                    self._reply(200, {"ok": True, "voice_state": state, "agent": owner.agent.status(), "allowed_tools": sorted(owner.allowed_tools), "direct_tools": sorted(owner.direct_tools)})
                     return
                 if self.path == "/v1/integrations":
                     google_ready = bool(os.environ.get("NANGO_SECRET_KEY", "").strip() and os.environ.get("NANGO_GMAIL_INTEGRATION_ID", "").strip() and os.environ.get("NANGO_GMAIL_CONNECTION_ID", "").strip()) or bool(os.environ.get("GOOGLE_TOKEN_JSON", "").strip()) or Path(os.environ.get("GOOGLE_TOKEN_PATH", "~/.aurora/google-token.json")).expanduser().exists()
@@ -297,6 +299,13 @@ class RemoteServer:
                         owner._run(owner.speak(text))
                         owner._audit("say", {"chars": len(text)}, True)
                         self._reply(200, {"ok": True})
+                        return
+                    if self.path == "/v1/chat":
+                        message = str(data.get("message", ""))
+                        session_id = str(data.get("conversation_id", "web"))
+                        result = owner._run(owner.agent.chat(session_id, message, owner.create_approval))
+                        owner._audit("chat", {"conversation_id": session_id[:100], "tools": result.get("tools_used", [])}, True)
+                        self._reply(200, result)
                         return
                     if self.path == "/v1/tool":
                         name = str(data.get("name", ""))
@@ -483,6 +492,16 @@ class RemoteServer:
             return bool(os.environ.get("WHATSAPP_CLOUD_API_TOKEN", "").strip() and os.environ.get("WHATSAPP_CLOUD_PHONE_NUMBER_ID", "").strip())
         return True
 
+    def create_approval(self, name: str, parameters: Dict[str, Any], summary: str) -> Dict[str, Any]:
+        """Queue an agent-requested side effect for the existing approval UI."""
+        approval_id = uuid.uuid4().hex
+        record = {"id": approval_id, "name": name, "parameters": parameters, "summary": str(summary)[:500], "status": "pending", "created_at": time.time()}
+        with self.approvals_lock:
+            self.approvals[approval_id] = record
+            self._persist_state()
+        self._audit("approval_requested", {"id": approval_id, "name": name, "source": "agent"}, True)
+        return {"id": approval_id, "name": name, "status": "pending"}
+
     def _persist_state(self) -> None:
         """Atomically persist queue state without putting it in the audit log."""
         try:
@@ -522,7 +541,7 @@ DASHBOARD_HTML = r"""<!doctype html>
 :root{--ink:#17172b;--muted:#77768b;--lav:#7669f5;--cream:#fffdf5}*{box-sizing:border-box}body{margin:0;background:linear-gradient(145deg,#f5fbfa,#fff9ee 58%,#f1efff);color:var(--ink);font:15px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{max-width:560px;margin:auto;padding:32px 20px 24px;min-height:100vh}header{text-align:center}h1{font-size:30px;margin:0;letter-spacing:-.06em}header p{margin:4px 0;color:var(--muted)}.orb{width:156px;height:156px;margin:18px auto 8px;border-radius:48%;background:radial-gradient(circle at 35% 25%,#bdfcff,transparent 30%),linear-gradient(145deg,#09dfe9,#405cff 58%,#c557ff);box-shadow:0 12px 42px #6c9cff88;position:relative}.orb:after{content:"";position:absolute;inset:34px 25px;border-radius:42%;background:#121832;box-shadow:inset 0 0 0 2px #3a65aa}.orb:before{content:"•  •";position:absolute;z-index:1;left:48px;top:60px;color:#83f5ff;font-size:27px;letter-spacing:10px}h2{font-size:34px;line-height:1.05;text-align:center;margin:8px 0 18px;letter-spacing:-.06em}.composer{background:#fffdfb;border:1px solid #ebe6dc;border-radius:24px;padding:8px;display:flex;box-shadow:0 8px 24px #8b8b9b18}.composer input{border:0;background:transparent;outline:0;padding:12px 14px;flex:1;font:inherit;color:var(--ink)}button{font:inherit;border:0;border-radius:16px;padding:12px 16px;background:#17172b;color:white;font-weight:650;cursor:pointer}button:hover{opacity:.85}.mic{border-radius:50%;width:48px;padding:0;background:var(--lav);font-size:20px}.label{color:var(--muted);text-align:center;margin:12px 0 7px}.chips{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}.chip{background:#ffffffbb;color:var(--ink);border:1px solid #e7e3dc;border-radius:20px;padding:10px 14px;font-weight:500}.section{margin-top:22px}.section-title{font-size:20px;font-weight:700;margin-bottom:8px}.requests{background:#ffffff99;border:1px solid #ebe6dc;border-radius:20px;padding:14px}.request{padding:10px 0;border-bottom:1px solid #eee9df}.request:last-child{border-bottom:0}.request small{color:var(--muted)}.actions{display:flex;gap:8px;margin-top:8px}.actions button{flex:1}.secondary{background:#fff;color:var(--ink);border:1px solid #ddd8ce}.bottom{display:flex;justify-content:space-around;margin-top:24px;color:#9895ad;font-size:25px}.setup{background:#fffdfb;border:1px solid #ebe6dc;border-radius:20px;padding:14px;margin-top:18px}.setup input{width:100%;padding:12px;border:1px solid #ddd8ce;border-radius:12px;font:inherit;margin:8px 0}.error{color:var(--muted);text-align:center;min-height:22px}
 </style>
 <body><main><header><h1>Kim</h1><p>Your personal AI companion</p><div class="orb"></div></header><h2>How can I<br>help you today?</h2>
-<div class="composer"><input id="ask" placeholder="Ask anything…"><button class="mic" onclick="talk()">⌁</button></div><div id="message" class="error"></div>
+<div class="composer"><input id="ask" placeholder="Ask Kim anything…" onkeydown="if(event.key==='Enter')send()"><button class="mic" onclick="send()">↑</button></div><div id="message" class="error"></div><div id="chat" class="requests" hidden></div>
 <div class="label">Try asking</div><div class="chips"><button class="chip" onclick="myDay()">My day</button><button class="chip" onclick="quick('calendar_upcoming','Checking your calendar…')">Calendar</button><button class="chip" onclick="email()">Send an email</button></div>
 <div id="setup" class="setup" hidden><b>Connect Kim to this phone</b><input id="pin" type="password" inputmode="numeric" maxlength="6" placeholder="Private PIN"><button onclick="save()">Connect securely</button></div>
 <div class="section"><div class="section-title">Kim’s briefing</div><div id="briefing" class="requests">Ask Kim to prepare your day.</div></div><div class="section"><div class="section-title">Requests</div><div id="approvals" class="requests">No requests waiting</div></div><div class="bottom"><span>⌂</span><span>✦</span><span>◷</span><span onclick="settings()">⚙</span></div>
@@ -531,7 +550,9 @@ DASHBOARD_HTML = r"""<!doctype html>
 const key='kim-pin';const pin=document.querySelector('#pin');pin.value=localStorage.getItem(key)||'';if(!pin.value)document.querySelector('#setup').hidden=false;
 async function call(path,opts={}){opts.headers=Object.assign({'X-Kim-Pin':pin.value,'Content-Type':'application/json'},opts.headers||{});const r=await fetch(path,opts);const j=await r.json();if(!r.ok)throw Error(j.error||'Connection failed');return j}
 async function save(){try{await call('/v1/status');localStorage.setItem(key,pin.value);document.querySelector('#setup').hidden=true;document.querySelector('#message').textContent='Connected to Kim'}catch(e){document.querySelector('#message').textContent='Could not connect — check your PIN'}}
-function present(value){try{const data=typeof value==='string'?JSON.parse(value):value;if(Array.isArray(data.items)){if(!data.items.length)return'No upcoming events';return data.items.map(event=>{const start=event.start?.dateTime||event.start?.date||'';return '• '+(start?new Date(start).toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'All day')+' — '+(event.summary||'(untitled)')}).join('\n')}if(Array.isArray(data.messages)){return data.messages.length+' email message(s) found'}return JSON.stringify(data,null,2)}catch(_){return String(value||'Done')}}\n+async function quick(name,label){document.querySelector('#message').textContent=label;try{const j=await call('/v1/tool',{method:'POST',body:JSON.stringify({name,parameters:{}})});document.querySelector('#message').textContent=present(j.result)}catch(e){document.querySelector('#message').textContent=e.message}}
+function present(value){try{const data=typeof value==='string'?JSON.parse(value):value;if(Array.isArray(data.items)){if(!data.items.length)return'No upcoming events';return data.items.map(event=>{const start=event.start?.dateTime||event.start?.date||'';return '• '+(start?new Date(start).toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'All day')+' — '+(event.summary||'(untitled)')}).join('\n')}if(Array.isArray(data.messages)){return data.messages.length+' email message(s) found'}return JSON.stringify(data,null,2)}catch(_){return String(value||'Done')}}
+async function quick(name,label){document.querySelector('#message').textContent=label;try{const j=await call('/v1/tool',{method:'POST',body:JSON.stringify({name,parameters:{}})});document.querySelector('#message').textContent=present(j.result)}catch(e){document.querySelector('#message').textContent=e.message}}
+async function send(){const input=document.querySelector('#ask');const text=input.value.trim();if(!text)return;const chat=document.querySelector('#chat');chat.hidden=false;chat.innerHTML+='<div class="request"><b>You</b><div style="margin-top:5px">'+text.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))+'</div></div>';input.value='';document.querySelector('#message').textContent='Kim is thinking…';try{const j=await call('/v1/chat',{method:'POST',body:JSON.stringify({message:text,conversation_id:'web'})});chat.innerHTML+='<div class="request"><b>Kim</b><div style="white-space:pre-wrap;margin-top:5px">'+String(j.message).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))+'</div></div>';document.querySelector('#message').textContent=j.tools_used?.length?'Used: '+j.tools_used.join(', '):'Ready'}catch(e){document.querySelector('#message').textContent=e.message}}
 async function myDay(){const box=document.querySelector('#briefing');box.textContent='Kim is reviewing your day…';document.querySelector('#message').textContent='';try{const j=await call('/v1/my-day');box.innerHTML='';for(const item of j.results){const section=document.createElement('div');section.className='request';const title=document.createElement('b');title.textContent=item.source+(item.status==='ready'?'':' · '+item.status.replace('_',' '));const pre=document.createElement('div');pre.style='white-space:pre-wrap;margin-top:6px;font-size:13px';pre.textContent=item.text;section.append(title,pre);box.appendChild(section)}if(j.pending_approvals.length){const p=document.createElement('div');p.style='margin-top:10px';p.textContent=j.pending_approvals.length+' action approval(s) waiting';box.appendChild(p)}document.querySelector('#message').textContent='Kim prepared your briefing'}catch(e){box.textContent='Kim could not prepare the briefing';document.querySelector('#message').textContent=e.message}}
 function talk(){document.querySelector('#message').textContent='Tap the microphone in the Kim app to start a voice session.'}
 function email(){document.querySelector('#emailDialog').showModal()}
