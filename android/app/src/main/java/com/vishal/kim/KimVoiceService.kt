@@ -22,6 +22,7 @@ class KimVoiceService : Service() {
         "battery", "disk_usage", "known_apps", "running_processes", "system_info",
         "gmail_search", "gmail_read", "gmail_today", "gmail_unanswered", "gmail_contacts",
         "calendar_upcoming", "whatsapp_search", "whatsapp_recent", "whatsapp_chats"
+        , "knowledge_search", "knowledge_sources", "deep_research"
     )
 
     override fun onCreate() {

@@ -6,6 +6,7 @@ Kim is a consumer-friendly, agentic layer for your devices. Kim owns the plannin
 - **Handle long-running tasks** — spawn background jobs (`start_task`), monitor logs, cancel them.
 - **A coding assistant by voice** — hands off real coding work to the local `opencode` CLI.
 - **Watch & react in the background** — battery/disk/directory monitors and scheduled reminders that speak up proactively (no mic needed in `watch` mode).
+- **Work like a research agent** — private knowledge spaces index documents and URLs, while `deep_research` searches and fetches multiple sources for cited synthesis.
 
 ```
  you ──mic──▶ ┌───────────────────────────────────────────────────┐
@@ -91,7 +92,7 @@ For cloud Gmail and Calendar, Kim uses Nango for connector authentication and it
 
 ## Tools
 
-`shell`, `files` (read/write/edit/list/search/info), `system_info`, `battery`, `disk_usage`, `running_processes`, `launch_app` (+ known app aliases), `volume_get/set`, `clipboard_get/set`, `screenshot`, `desktop_notify`, `web_search`, `web_fetch`, `start_task`/`task_log`/`list_tasks`/`cancel_task`, `opencode_run`, `schedule_remind`, `schedule_every`, `list_schedules`, `schedule_cancel`.
+`shell`, `files` (read/write/edit/list/search/info), `system_info`, `battery`, `disk_usage`, `running_processes`, `launch_app`/`navigate_browser` (+ known app aliases), `volume_get/set`, `clipboard_get/set`, `screenshot`, `desktop_notify`, `web_search`, `web_fetch`, `deep_research`, `knowledge_ingest`/`knowledge_search`/`knowledge_sources`, `memory_save`/`memory_search`, `start_task`/`task_log`/`list_tasks`/`cancel_task`, `opencode_run`, `schedule_remind`, `schedule_every`, `list_schedules`, `schedule_cancel`.
 
 > Note on the 110s tool window: ElevenLabs caps a client tool response at 120s, so `opencode_run` and `run_shell` are best for short work; longer work should go through `start_task` + `task_log` (which the agent does automatically for long-running commands).
 

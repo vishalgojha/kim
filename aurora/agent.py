@@ -15,7 +15,7 @@ WRITE_TOOLS = {
     "gmail_send", "calendar_create", "whatsapp_send", "type_text", "press_key",
     "clipboard_set", "volume_set", "launch_app", "navigate_browser", "run_shell", "start_task",
     "cancel_task", "schedule_remind", "schedule_every", "schedule_cancel",
-    "file_write", "file_edit", "file_delete", "opencode_run",
+    "file_write", "file_edit", "file_delete", "knowledge_ingest", "opencode_run",
 }
 
 
