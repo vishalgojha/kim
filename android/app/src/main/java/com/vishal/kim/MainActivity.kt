@@ -26,6 +26,8 @@ class MainActivity : Activity() {
     private lateinit var pin: EditText
     private lateinit var status: TextView
     private lateinit var approvalsBox: LinearLayout
+    private lateinit var chatBox: TextView
+    private lateinit var messageInput: EditText
     private val baseUrl = "https://app.vishalojha.me"
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -41,6 +43,11 @@ class MainActivity : Activity() {
         if (prefs.getString("pin", "").isNullOrBlank()) addSetupCard(root)
         status = TextView(this).apply { text = "Ready when you are"; textSize = 14f; gravity = android.view.Gravity.CENTER; setPadding(0, 8, 0, 8) }
         root.addView(status)
+        chatBox = TextView(this).apply { text = ""; textSize = 15f; setPadding(14, 12, 14, 12); setBackgroundColor(Color.WHITE) }
+        root.addView(chatBox, LinearLayout.LayoutParams(-1, 180))
+        messageInput = EditText(this).apply { hint = "Ask Kim anything…"; singleLine = false; maxLines = 3; setTextColor(Color.rgb(24, 24, 40)); setHintTextColor(Color.GRAY) }
+        root.addView(messageInput)
+        root.addView(Button(this).apply { text = "Ask Kim"; setOnClickListener { sendChat() } })
         root.addView(Button(this).apply { text = "Talk to Kim"; setOnClickListener { startListening() } })
         root.addView(TextView(this).apply { text = "Try asking"; textSize = 15f; setPadding(0, 8, 0, 5) })
         val suggestions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER }
@@ -107,9 +114,9 @@ class MainActivity : Activity() {
                 view.setPadding(18, 12, 18, 12)
             }
             is EditText -> {
-                view.setTextColor(Color.rgb(237, 237, 237))
-                view.setHintTextColor(Color.rgb(161, 161, 170))
-                view.backgroundTintList = ColorStateList.valueOf(Color.rgb(82, 82, 91))
+                view.setTextColor(Color.rgb(24, 24, 40))
+                view.setHintTextColor(Color.rgb(120, 120, 130))
+                view.backgroundTintList = ColorStateList.valueOf(Color.rgb(190, 190, 198))
             }
             is TextView -> view.setTextColor(Color.rgb(24, 24, 40))
         }
@@ -117,6 +124,18 @@ class MainActivity : Activity() {
     }
 
     private fun client() = KimClient(baseUrl, pin.text.toString().trim())
+    private fun sendChat() {
+        val message = messageInput.text.toString().trim()
+        if (message.isBlank()) return
+        chatBox.text = "You: $message\n\nKim is thinking…"
+        messageInput.text.clear()
+        executor.execute {
+            val raw = runCatching { client().chat(message, "android-${KimPrefs.deviceId(this)}") }.getOrElse { "500: ${it.message ?: "Kim is unavailable"}" }
+            val body = raw.substringAfter(": ", raw)
+            val reply = runCatching { JSONObject(body).optString("message", body) }.getOrDefault(body)
+            runOnUiThread { chatBox.text = "You: $message\n\nKim: $reply" }
+        }
+    }
     private fun refresh() { executor.execute { val value = runCatching { client().getStatus() }.getOrElse { it.message ?: "connection failed" }; runOnUiThread { status.text = value } } }
     private fun refreshIntegrations() { executor.execute { val value = runCatching { client().getIntegrations() }.getOrElse { it.message ?: "request failed" }; runOnUiThread { status.text = value } } }
     private fun requestApproval(name: String, rawParameters: String, summary: String) {

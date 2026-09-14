@@ -10,6 +10,9 @@ class KimClient(private val baseUrl: String, private val token: String) {
     fun getIntegrations(): String = request("GET", "/v1/integrations")
     fun getApprovals(): String = request("GET", "/v1/approvals")
     fun getVoiceSession(): String = request("GET", "/v1/voice/session")
+    fun chat(message: String, conversationId: String): String = request(
+        "POST", "/v1/chat", JSONObject().put("message", message).put("conversation_id", conversationId).toString()
+    )
     fun control(action: String): String = request("POST", "/v1/control", "{\"action\":\"$action\"}")
     fun approve(id: String): String = request("POST", "/v1/approvals/$id/approve", "{}")
     fun reject(id: String): String = request("POST", "/v1/approvals/$id/reject", "{}")
