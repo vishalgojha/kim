@@ -63,6 +63,8 @@ class RemoteServer:
         self.devices: Dict[str, Dict[str, Any]] = {}
         self.google_states: Dict[str, float] = {}
         self.agent = AgentCore(registry)
+        self.research_jobs: Dict[str, Dict[str, Any]] = {}
+        self.research_lock = threading.Lock()
         self.commands_lock = threading.Lock()
         self._load_state()
         self.server: Optional[ThreadingHTTPServer] = None
@@ -164,6 +166,21 @@ class RemoteServer:
                     except OSError:
                         state = "offline"
                     self._reply(200, {"ok": True, "voice_state": state, "agent": owner.agent.status(), "allowed_tools": sorted(owner.allowed_tools), "direct_tools": sorted(owner.direct_tools)})
+                    return
+                if self.path == "/v1/knowledge/sources":
+                    result, is_error = owner._run(owner.registry.run("knowledge_sources", {}))
+                    self._reply(500 if is_error else 200, {"ok": not is_error, "sources": result})
+                    return
+                if self.path.startswith("/v1/research/"):
+                    job_id = self.path.removeprefix("/v1/research/").strip("/")
+                    with owner.research_lock:
+                        job = dict(owner.research_jobs.get(job_id, {}))
+                    self._reply(404 if not job else 200, {"error": "research job not found"} if not job else {"ok": True, "job": job})
+                    return
+                if self.path == "/v1/research":
+                    with owner.research_lock:
+                        jobs = [dict(item) for item in owner.research_jobs.values()]
+                    self._reply(200, {"ok": True, "jobs": jobs[-20:]})
                     return
                 if self.path == "/v1/integrations":
                     google_ready = bool(os.environ.get("NANGO_SECRET_KEY", "").strip() and os.environ.get("NANGO_GMAIL_INTEGRATION_ID", "").strip() and os.environ.get("NANGO_GMAIL_CONNECTION_ID", "").strip()) or bool(os.environ.get("GOOGLE_TOKEN_JSON", "").strip()) or Path(os.environ.get("GOOGLE_TOKEN_PATH", "~/.aurora/google-token.json")).expanduser().exists()
@@ -275,7 +292,10 @@ class RemoteServer:
                         return
                     if self.path == "/v1/device/command":
                         action = str(data.get("action", "")).strip().lower()
-                        allowed = {"open_url", "open_app", "media", "volume", "flashlight", "notify"}
+                        allowed = {
+                            "open_url", "open_app", "media", "volume", "flashlight", "notify",
+                            "type_text", "press_key", "screenshot", "playwright_run",
+                        }
                         if action not in allowed:
                             raise ValueError(f"action must be one of {sorted(allowed)}")
                         command = {"id": uuid.uuid4().hex, "type": "device", "device_id": str(data.get("device_id", "")).strip() or None, "action": action, "parameters": data.get("parameters", {}), "created_at": time.time()}
@@ -306,6 +326,18 @@ class RemoteServer:
                         result = owner._run(owner.agent.chat(session_id, message, owner.create_approval))
                         owner._audit("chat", {"conversation_id": session_id[:100], "tools": result.get("tools_used", [])}, True)
                         self._reply(200, result)
+                        return
+                    if self.path == "/v1/research":
+                        question = str(data.get("question", "")).strip()
+                        if not question or len(question) > 4_000:
+                            raise ValueError("question must be 1-4000 characters")
+                        job_id = uuid.uuid4().hex
+                        job = {"id": job_id, "question": question, "status": "queued", "created_at": time.time()}
+                        with owner.research_lock:
+                            owner.research_jobs[job_id] = job
+                        asyncio.run_coroutine_threadsafe(owner._research_job(job_id, question, int(data.get("depth", 2)), int(data.get("max_sources", 5))), owner.loop)
+                        owner._audit("research_started", {"id": job_id}, True)
+                        self._reply(202, {"ok": True, "job": job})
                         return
                     if self.path == "/v1/tool":
                         name = str(data.get("name", ""))
@@ -502,6 +534,16 @@ class RemoteServer:
         self._audit("approval_requested", {"id": approval_id, "name": name, "source": "agent"}, True)
         return {"id": approval_id, "name": name, "status": "pending"}
 
+    async def _research_job(self, job_id: str, question: str, depth: int, max_sources: int) -> None:
+        with self.research_lock:
+            if job_id in self.research_jobs:
+                self.research_jobs[job_id]["status"] = "running"
+        result, is_error = await self.registry.run("deep_research", {"question": question, "depth": max(1, min(depth, 3)), "max_sources": max(2, min(max_sources, 8))})
+        with self.research_lock:
+            if job_id in self.research_jobs:
+                self.research_jobs[job_id].update({"status": "failed" if is_error else "completed", "result": result[:100_000], "finished_at": time.time()})
+        self._audit("research_finished", {"id": job_id, "error": is_error}, not is_error)
+
     def _persist_state(self) -> None:
         """Atomically persist queue state without putting it in the audit log."""
         try:
@@ -543,6 +585,7 @@ DASHBOARD_HTML = r"""<!doctype html>
 <body><main><header><h1>Kim</h1><p>Your personal AI companion</p><div class="orb"></div></header><h2>How can I<br>help you today?</h2>
 <div class="composer"><input id="ask" placeholder="Ask Kim anything…" onkeydown="if(event.key==='Enter')send()"><button class="mic" onclick="send()">↑</button></div><div id="message" class="error"></div><div id="chat" class="requests" hidden></div>
 <div class="label">Try asking</div><div class="chips"><button class="chip" onclick="myDay()">My day</button><button class="chip" onclick="quick('calendar_upcoming','Checking your calendar…')">Calendar</button><button class="chip" onclick="email()">Send an email</button></div>
+<div class="section"><div class="section-title">Research with Kim</div><div class="composer"><input id="research" placeholder="What should Kim investigate?"><button onclick="startResearch()">Run</button></div><div id="researchStatus" class="requests">No research running</div></div>
 <div id="setup" class="setup" hidden><b>Connect Kim to this phone</b><input id="pin" type="password" inputmode="numeric" maxlength="6" placeholder="Private PIN"><button onclick="save()">Connect securely</button></div>
 <div class="section"><div class="section-title">Kim’s briefing</div><div id="briefing" class="requests">Ask Kim to prepare your day.</div></div><div class="section"><div class="section-title">Requests</div><div id="approvals" class="requests">No requests waiting</div></div><div class="bottom"><span>⌂</span><span>✦</span><span>◷</span><span onclick="settings()">⚙</span></div>
 <dialog id="emailDialog"><form method="dialog" class="setup"><h3>Prepare an email</h3><input id="emailTo" placeholder="To" type="email" required><input id="emailSubject" placeholder="Subject" required><textarea id="emailBody" placeholder="Message" rows="5" required></textarea><div class="actions"><button value="cancel" class="secondary">Cancel</button><button value="send" onclick="submitEmail(event)">Ask Kim to send</button></div></form></dialog>
@@ -553,6 +596,8 @@ async function save(){try{await call('/v1/status');localStorage.setItem(key,pin.
 function present(value){try{const data=typeof value==='string'?JSON.parse(value):value;if(Array.isArray(data.items)){if(!data.items.length)return'No upcoming events';return data.items.map(event=>{const start=event.start?.dateTime||event.start?.date||'';return '• '+(start?new Date(start).toLocaleString([], {weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'All day')+' — '+(event.summary||'(untitled)')}).join('\n')}if(Array.isArray(data.messages)){return data.messages.length+' email message(s) found'}return JSON.stringify(data,null,2)}catch(_){return String(value||'Done')}}
 async function quick(name,label){document.querySelector('#message').textContent=label;try{const j=await call('/v1/tool',{method:'POST',body:JSON.stringify({name,parameters:{}})});document.querySelector('#message').textContent=present(j.result)}catch(e){document.querySelector('#message').textContent=e.message}}
 async function send(){const input=document.querySelector('#ask');const text=input.value.trim();if(!text)return;const chat=document.querySelector('#chat');chat.hidden=false;chat.innerHTML+='<div class="request"><b>You</b><div style="margin-top:5px">'+text.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))+'</div></div>';input.value='';document.querySelector('#message').textContent='Kim is thinking…';try{const j=await call('/v1/chat',{method:'POST',body:JSON.stringify({message:text,conversation_id:'web'})});chat.innerHTML+='<div class="request"><b>Kim</b><div style="white-space:pre-wrap;margin-top:5px">'+String(j.message).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))+'</div></div>';document.querySelector('#message').textContent=j.tools_used?.length?'Used: '+j.tools_used.join(', '):'Ready'}catch(e){document.querySelector('#message').textContent=e.message}}
+async function startResearch(){const input=document.querySelector('#research');const question=input.value.trim();if(!question)return;const box=document.querySelector('#researchStatus');box.textContent='Kim is planning the investigation…';try{const j=await call('/v1/research',{method:'POST',body:JSON.stringify({question,depth:2,max_sources:5})});input.value='';pollResearch(j.job.id)}catch(e){box.textContent=e.message}}
+async function pollResearch(id){const box=document.querySelector('#researchStatus');try{const j=await call('/v1/research/'+id);const job=j.job;if(job.status==='queued'||job.status==='running'){box.textContent='Kim is researching multiple sources…';setTimeout(()=>pollResearch(id),1800);return}box.innerHTML='<b>'+job.status+'</b><div style="white-space:pre-wrap;margin-top:8px;font-size:13px">'+String(job.result||'No result').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))+'</div>'}catch(e){box.textContent=e.message}}
 async function myDay(){const box=document.querySelector('#briefing');box.textContent='Kim is reviewing your day…';document.querySelector('#message').textContent='';try{const j=await call('/v1/my-day');box.innerHTML='';for(const item of j.results){const section=document.createElement('div');section.className='request';const title=document.createElement('b');title.textContent=item.source+(item.status==='ready'?'':' · '+item.status.replace('_',' '));const pre=document.createElement('div');pre.style='white-space:pre-wrap;margin-top:6px;font-size:13px';pre.textContent=item.text;section.append(title,pre);box.appendChild(section)}if(j.pending_approvals.length){const p=document.createElement('div');p.style='margin-top:10px';p.textContent=j.pending_approvals.length+' action approval(s) waiting';box.appendChild(p)}document.querySelector('#message').textContent='Kim prepared your briefing'}catch(e){box.textContent='Kim could not prepare the briefing';document.querySelector('#message').textContent=e.message}}
 function talk(){document.querySelector('#message').textContent='Tap the microphone in the Kim app to start a voice session.'}
 function email(){document.querySelector('#emailDialog').showModal()}
