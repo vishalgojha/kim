@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import sys
+import struct
 import time
 from pathlib import Path
 from typing import Any, Dict
@@ -35,6 +36,8 @@ WAKE_PHRASES = {
     "kim wake up",
 }
 VOICE_STATE_PATH = Path.home() / ".aurora" / "voice_state"
+VOICE_COMMAND_PATH = Path.home() / ".aurora" / "voice_command"
+VOICE_CONTEXT_PATH = Path.home() / ".aurora" / "voice-context.json"
 
 
 class RealtimeSession:
@@ -58,6 +61,8 @@ class RealtimeSession:
         self._conversation_id = None
         self._running = True
         self._paused = False
+        self._voice_active_until = 0.0
+        self._assistant_buffer: list[str] = []
         self._set_voice_state("offline")
 
     @staticmethod
@@ -76,6 +81,38 @@ class RealtimeSession:
                 await self.output.play_tone([(392.00, 0.10), (261.63, 0.18)])
         except Exception as e:  # noqa: BLE001
             log.debug("state tone unavailable: %s", e)
+
+    async def _pause_voice(self, source: str = "control") -> None:
+        if self._paused:
+            return
+        self._paused = True
+        self._set_voice_state("paused")
+        await self.output.interrupt()
+        await self._state_tone("paused")
+        log.info("voice paused by %s", source)
+
+    async def _wake_voice(self, source: str = "control") -> None:
+        if not self._paused:
+            return
+        self._paused = False
+        self._set_voice_state("listening")
+        await self._state_tone("wake")
+        log.info("voice resumed by %s", source)
+
+    async def _control_loop(self) -> None:
+        while self._running:
+            try:
+                command = VOICE_COMMAND_PATH.read_text().strip().lower()
+                VOICE_COMMAND_PATH.unlink(missing_ok=True)
+                if command == "pause":
+                    await self._pause_voice()
+                elif command == "wake":
+                    await self._wake_voice()
+            except FileNotFoundError:
+                pass
+            except Exception as e:  # noqa: BLE001
+                log.debug("voice control read failed: %s", e)
+            await asyncio.sleep(0.15)
 
     # ------------------------------------------------------------------ ws io
     async def _ws_url(self) -> str:
@@ -101,7 +138,7 @@ class RealtimeSession:
         init = {
             "type": "conversation_initiation_client_data",
             "conversation_config_override": {},
-            "dynamic_variables": {},
+            "dynamic_variables": {"last_context": self._load_context()},
         }
         await self._ws.send(json.dumps(init))
 
@@ -164,19 +201,21 @@ class RealtimeSession:
                     spoken = t.strip()
                     normalized = re.sub(r"[^a-z0-9 ]+", "", spoken.lower()).strip()
                     if normalized in STOP_PHRASES:
-                        self._paused = True
-                        self._set_voice_state("paused")
-                        await self.output.interrupt()
-                        await self._state_tone("paused")
+                        await self._pause_voice("stop phrase")
                         log.info("voice paused by stop phrase: %s", spoken)
                         print("\n  Kim paused. Say 'Kim' or 'wake up' to resume.")
                     elif self._paused and normalized in WAKE_PHRASES:
-                        self._paused = False
-                        self._set_voice_state("listening")
-                        await self._state_tone("wake")
+                        await self._wake_voice("wake phrase")
                         log.info("voice resumed by wake phrase: %s", spoken)
                         print("\n  Kim listening.")
                     elif not self._paused:
+                        try:
+                            recent = self._load_context()
+                            VOICE_CONTEXT_PATH.parent.mkdir(parents=True, exist_ok=True)
+                            VOICE_CONTEXT_PATH.write_text(json.dumps({"context": (recent + "\nVishal: " + spoken)[-4000:]}, ensure_ascii=False), encoding="utf-8")
+                            VOICE_CONTEXT_PATH.chmod(0o600)
+                        except OSError:
+                            pass
                         print(f"\n  you: {spoken}")
 
             elif mtype in ("agent_response", "agent_response_correction"):
@@ -184,14 +223,16 @@ class RealtimeSession:
 
             elif mtype == "agent_chat_response_part":
                 part = msg.get("text_response_part", {})
-                if part.get("type") == "start":
-                    pass
+                text = str(part.get("text", "") or part.get("content", "")).strip()
+                if text:
+                    self._assistant_buffer.append(text)
 
             elif mtype == "client_tool_call":
                 call = msg.get("client_tool_call", {})
                 asyncio.create_task(self._run_tool(call))
 
             elif mtype == "agent_response_complete":
+                self._save_context()
                 if not self._paused:
                     self._set_voice_state("listening")
                 log.debug("agent response complete")
@@ -201,6 +242,26 @@ class RealtimeSession:
                 log.warning("client_error: %s", ev)
         except Exception as e:  # noqa: BLE001
             log.exception("error handling %s", mtype)
+
+    @staticmethod
+    def _load_context() -> str:
+        try:
+            data = json.loads(VOICE_CONTEXT_PATH.read_text(encoding="utf-8"))
+            return str(data.get("context", ""))[-4000:]
+        except (OSError, json.JSONDecodeError):
+            return ""
+
+    def _save_context(self) -> None:
+        try:
+            recent = self._load_context()
+            if self._assistant_buffer:
+                recent = (recent + "\nKim: " + " ".join(self._assistant_buffer))[-4000:]
+            VOICE_CONTEXT_PATH.parent.mkdir(parents=True, exist_ok=True)
+            VOICE_CONTEXT_PATH.write_text(json.dumps({"context": recent}, ensure_ascii=False), encoding="utf-8")
+            VOICE_CONTEXT_PATH.chmod(0o600)
+            self._assistant_buffer.clear()
+        except OSError:
+            log.debug("could not save voice context", exc_info=True)
 
     async def _run_tool(self, call: Dict[str, Any]) -> None:
         tool_name = call.get("tool_name", "")
@@ -230,6 +291,18 @@ class RealtimeSession:
     async def _run_once(self) -> None:
         await self._open()
         async def mic_callback(chunk: bytes) -> None:
+            # Do not forward quiet room noise to ElevenLabs. The hangover keeps
+            # natural words from being clipped once speech crosses the gate.
+            threshold = float(self.cfg.get("audio", {}).get("input_threshold", 700))
+            try:
+                samples = struct.unpack("<%dh" % (len(chunk) // 2), chunk[: len(chunk) // 2 * 2])
+                rms = (sum(sample * sample for sample in samples) / max(1, len(samples))) ** 0.5
+            except (struct.error, ValueError):
+                rms = 0.0
+            if rms >= threshold:
+                self._voice_active_until = time.monotonic() + float(self.cfg.get("audio", {}).get("voice_hangover_ms", 900)) / 1000
+            elif time.monotonic() > self._voice_active_until:
+                return
             await self._send({"user_audio_chunk": base64.b64encode(chunk).decode()})
 
         await self.capture.start(mic_callback)
@@ -240,20 +313,25 @@ class RealtimeSession:
 
     async def run_forever(self) -> None:
         backoff = 2
-        while self._running:
-            try:
-                await self._run_once()
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:  # noqa: BLE001
-                log.error("session dropped: %s", e)
-            await self.close()
-            self._set_voice_state("offline")
-            await self.capture.stop()
-            await self.output.interrupt()
-            if not self._running:
-                break
-            log.info("reconnecting in %ss...", backoff)
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, 30)
+        control_task = asyncio.create_task(self._control_loop(), name="voice-control")
+        try:
+            while self._running:
+                try:
+                    await self._run_once()
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:  # noqa: BLE001
+                    log.error("session dropped: %s", e)
+                await self.close()
+                self._set_voice_state("offline")
+                await self.capture.stop()
+                await self.output.interrupt()
+                if not self._running:
+                    break
+                log.info("reconnecting in %ss...", backoff)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30)
+        finally:
+            control_task.cancel()
+            await asyncio.gather(control_task, return_exceptions=True)
         log.info("voice session ended")

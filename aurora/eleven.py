@@ -179,7 +179,7 @@ class ElevenAPI:
         if agent_cfg.get("reasoning"):
             prompt_block.reasoning_effort = "low"
         agent = AgentConfig(
-            first_message=agent_cfg.get("first_message") or "Hi Vishal, Kim here.",
+            first_message=agent_cfg.get("first_message", ""),
             language=agent_cfg.get("language"),
             prompt=prompt_block,
         )

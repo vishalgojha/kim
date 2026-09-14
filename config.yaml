@@ -7,7 +7,7 @@ elevenlabs:
   conversational_tts_model: eleven_multilingual_v2
 agent:
   name: Kim
-  first_message: "Hi Vishal, Kim here."
+  first_message: ''
   llm: gemini-3.8-flash
   language: hi
   client_events:
@@ -29,7 +29,7 @@ user:
   building: PropAI
 turn:
   turn_timeout: 7.0
-  turn_eagerness: normal
+  turn_eagerness: low
   silence_end_call_timeout: -1.0
 audio:
   input_device: ''
@@ -38,6 +38,8 @@ audio:
   channels: 1
   chunk_ms: 250
   gain: 1.2
+  input_threshold: 700
+  voice_hangover_ms: 900
 permissions:
   default: allow
   ask_for:
