@@ -428,6 +428,10 @@ class RemoteServer:
         log.info("remote API listening on %s:%s", self.host, self.port)
 
     def _check(self, handler: BaseHTTPRequestHandler) -> bool:
+        # Let the trusted native desktop path authenticate first; it is intentionally
+        # independent of the mobile/web PIN configuration.
+        if handler._auth():  # type: ignore[attr-defined]
+            return True
         if not self.pin and not self.token:
             handler._reply(503, {"error": "remote PIN is not configured"})  # type: ignore[attr-defined]
             return False
