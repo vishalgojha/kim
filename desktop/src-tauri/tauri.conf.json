@@ -30,6 +30,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "icon": ["icons/kim-orb.svg"],
     "category": "Utility",
     "shortDescription": "Kim personal agent"
   }
