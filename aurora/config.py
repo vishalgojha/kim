@@ -86,7 +86,7 @@ DEFAULTS: Dict[str, Any] = {
         "token_env": "KIM_REMOTE_TOKEN",
         "pin_env": "KIM_REMOTE_PIN",
         "domain": "app.vishalojha.me",
-        "cors_origins": ["https://app.vishalojha.me"],
+        "cors_origins": ["https://app.vishalojha.me", "http://tauri.localhost", "https://tauri.localhost", "tauri://localhost"],
         "audit_path": "~/.aurora/remote-audit.jsonl",
         "state_path": "~/.aurora/remote-state.json",
         "direct_tools": [],

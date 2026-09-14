@@ -75,3 +75,14 @@ watcher:
 whatsapp:
   db_path: ~/whatsapp-mcp/whatsapp-bridge/store/messages.db
   read_only: true
+remote:
+  enabled: true
+  host: 127.0.0.1
+  port: 8765
+  domain: app.vishalojha.me
+  cors_origins:
+  - https://rj.vishalojha.me
+  - https://app.vishalojha.me
+  - http://tauri.localhost
+  - https://tauri.localhost
+  - tauri://localhost
