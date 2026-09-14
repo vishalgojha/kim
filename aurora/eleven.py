@@ -171,6 +171,10 @@ class ElevenAPI:
         agent_cfg = cfg["agent"]
         el = cfg["elevenlabs"]
         turn_cfg = cfg.get("turn", {})
+        turn_eagerness = str(turn_cfg.get("turn_eagerness", "normal")).strip().lower()
+        if turn_eagerness not in {"patient", "normal", "eager"}:
+            log.warning("unsupported ElevenLabs turn_eagerness=%r; using normal", turn_eagerness)
+            turn_eagerness = "normal"
         prompt_block = T.PromptAgentApiModelOutput(
             prompt=agent_cfg.get("prompt") or "",
             llm=agent_cfg.get("llm") or "gpt-5-mini",
@@ -186,7 +190,7 @@ class ElevenAPI:
         config = ConversationalConfig(
             turn=T.TurnConfig(
                 turn_timeout=float(turn_cfg.get("turn_timeout", 2.0)),
-                turn_eagerness=turn_cfg.get("turn_eagerness", "normal"),
+                turn_eagerness=turn_eagerness,
                 silence_end_call_timeout=float(turn_cfg.get("silence_end_call_timeout", -1.0)),
                 initial_wait_time=float(turn_cfg.get("initial_wait_time", 15.0)),
             ),
