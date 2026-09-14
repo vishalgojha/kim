@@ -92,6 +92,7 @@ async def run_voice(cfg: Dict[str, Any]) -> None:
         asyncio.create_task(session.run_forever(), name="voice"),
         asyncio.create_task(watcher.run(), name="watcher"),
         asyncio.create_task(_remote_command_loop(cfg), name="remote-command-relay"),
+        asyncio.create_task(_desktop_device_command_loop(cfg), name="desktop-device-relay"),
     ]
     print("Kim voice agent starting. Ctrl-C to stop.")
     stop_ev = asyncio.Event()
@@ -151,6 +152,68 @@ async def _remote_command_loop(cfg: Dict[str, Any]) -> None:
                 raise
             except Exception as exc:  # noqa: BLE001
                 log.debug("remote command relay unavailable: %s", exc)
+            await asyncio.sleep(2)
+
+
+async def _desktop_device_command_loop(cfg: Dict[str, Any]) -> None:
+    """Pull desktop actions from the public Kim relay into this laptop."""
+    import httpx
+
+    remote = cfg.get("remote", {})
+    domain = str(remote.get("domain", "")).strip().rstrip("/")
+    pin_env = str(remote.get("pin_env", "KIM_REMOTE_PIN"))
+    pin = os.environ.get(pin_env, "").strip()
+    if not domain or not pin:
+        log.warning("desktop device relay disabled: domain or KIM_REMOTE_PIN missing")
+        return
+    device_id = os.environ.get("KIM_DESKTOP_DEVICE_ID", "laptop").strip() or "laptop"
+    base = f"https://{domain}"
+    capabilities = ["open_url", "open_app", "type_text", "press_key", "screenshot", "playwright_run"]
+    async with httpx.AsyncClient(timeout=12.0) as client:
+        while True:
+            try:
+                headers = {"X-Kim-Pin": pin}
+                await client.post(
+                    f"{base}/v1/device/heartbeat",
+                    headers=headers,
+                    json={"device_id": device_id, "capabilities": capabilities},
+                )
+                response = await client.get(
+                    f"{base}/v1/device/commands/next",
+                    params={"device_id": device_id},
+                    headers=headers,
+                )
+                if response.is_success:
+                    command = (response.json() or {}).get("command") or {}
+                    if command:
+                        action = str(command.get("action", "")).strip().lower()
+                        params = command.get("parameters") if isinstance(command.get("parameters"), dict) else {}
+                        tool_name = {
+                            "open_url": "launch_app",
+                            "open_app": "launch_app",
+                            "type_text": "type_text",
+                            "press_key": "press_key",
+                            "screenshot": "screenshot",
+                            "playwright_run": "playwright_run",
+                        }.get(action)
+                        tool_params = params
+                        if action == "open_url":
+                            tool_params = {"name": params.get("url") or params.get("name") or ""}
+                        elif action == "open_app":
+                            tool_params = {"name": params.get("name") or params.get("app_name") or params.get("package") or ""}
+                        if tool_name:
+                            result, is_error = await REGISTRY.run(tool_name, tool_params)
+                        else:
+                            result, is_error = f"unsupported desktop action: {action}", True
+                        await client.post(
+                            f"{base}/v1/device/commands/{command.get('id', '')}/result",
+                            headers=headers,
+                            json={"action": action, "result": result, "is_error": is_error},
+                        )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                log.debug("desktop device relay unavailable: %s", exc)
             await asyncio.sleep(2)
 
 
