@@ -13,6 +13,7 @@ const esc = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (c) => (
 const api = async (path: string, init: RequestInit = {}) => {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
+  headers.set("X-Kim-Client", "kim-desktop");
   if (state.pin) headers.set("X-Kim-Pin", state.pin);
   const response = await fetch(`${state.base}${path}`, { ...init, headers });
   const data = await response.json().catch(() => ({}));

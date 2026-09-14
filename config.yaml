@@ -86,3 +86,7 @@ remote:
   - http://tauri.localhost
   - https://tauri.localhost
   - tauri://localhost
+  trusted_desktop_origins:
+  - http://tauri.localhost
+  - https://tauri.localhost
+  - tauri://localhost

@@ -49,6 +49,7 @@ class RemoteServer:
             item.strip() for item in configured_direct.split(",") if item.strip()
         }
         self.cors_origins = set(remote.get("cors_origins", []))
+        self.trusted_desktop_origins = set(remote.get("trusted_desktop_origins", ["http://tauri.localhost", "https://tauri.localhost", "tauri://localhost"]))
         self.registry = registry
         self.loop = loop
         self.control_path = control_path
@@ -98,6 +99,13 @@ class RemoteServer:
                 self.wfile.write(body)
 
             def _auth(self) -> bool:
+                # The native Tauri client is intentionally PIN-less for desktop UX.
+                # Web and mobile callers still require the configured PIN/token.
+                if (
+                    self.headers.get("X-Kim-Client", "").strip() == "kim-desktop"
+                    and self.headers.get("Origin", "") in owner.trusted_desktop_origins
+                ):
+                    return True
                 pin = self.headers.get("X-Kim-Pin", "").strip()
                 if pin and owner.pin:
                     return hmac.compare_digest(pin, owner.pin)
@@ -117,7 +125,7 @@ class RemoteServer:
                 if origin in owner.cors_origins:
                     self.send_header("Access-Control-Allow-Origin", origin)
                     self.send_header("Vary", "Origin")
-                self.send_header("Access-Control-Allow-Headers", "Authorization, X-Kim-Pin, Content-Type")
+                self.send_header("Access-Control-Allow-Headers", "Authorization, X-Kim-Pin, X-Kim-Client, Content-Type")
                 self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
                 self.end_headers()
 
