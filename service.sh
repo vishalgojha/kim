@@ -23,7 +23,11 @@ case "${1:-}" in
     cp "$SRC" "$DEST"
     cp "$WA_SRC" "$WA_DEST"
     mkdir -p "$HOME/.local/share/applications"
-    cp "$DESKTOP_SRC" "$DESKTOP_DEST"
+    # Prefer the packaged Tauri launcher when it exists. The legacy lowercase
+    # launcher otherwise creates a second Kim icon in GNOME's app grid.
+    if [ ! -e "$HOME/.local/share/applications/Kim.desktop" ] && [ ! -e "/usr/share/applications/Kim.desktop" ]; then
+      cp "$DESKTOP_SRC" "$DESKTOP_DEST"
+    fi
     if [ -f "$DIR/systemd/aurora-mic.service" ]; then
       cp "$DIR/systemd/aurora-mic.service" "$HOME/.config/systemd/user/"
     fi
