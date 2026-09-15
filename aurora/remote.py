@@ -45,11 +45,13 @@ class RemoteServer:
         self.port = int(remote.get("port", 8765))
         self.token = os.environ.get(str(remote.get("token_env", "KIM_REMOTE_TOKEN")), "").strip()
         self.pin = os.environ.get(str(remote.get("pin_env", "KIM_REMOTE_PIN")), "").strip()
-        self.allowed_tools = set(remote.get("allowed_tools", []))
+        self.allowed_tools = set(remote.get("allowed_tools") or registry.names())
         configured_direct = os.environ.get("KIM_REMOTE_DIRECT_TOOLS", "")
         self.direct_tools = set(remote.get("direct_tools", [])) | {
             item.strip() for item in configured_direct.split(",") if item.strip()
         }
+        if "*" in self.allowed_tools:
+            self.allowed_tools = set(registry.names())
         self.cors_origins = set(remote.get("cors_origins", []))
         self.trusted_desktop_origins = set(remote.get("trusted_desktop_origins", ["http://tauri.localhost", "https://tauri.localhost", "tauri://localhost"]))
         self.registry = registry
@@ -333,9 +335,10 @@ class RemoteServer:
                         message = str(data.get("message", ""))
                         user = self.headers.get("X-Kim-User", "").strip() or "default"
                         session_id = f"{user}:{data.get('conversation_id', 'web')}"
+                        device_context = str(data.get("device_context", "web browser"))
                         if owner.text_chat is not None:
                             try:
-                                result = owner._run(owner.text_chat.chat(session_id, message, owner.create_approval))
+                                result = owner._run(owner.text_chat.chat(session_id, message, owner.create_approval, device_context))
                             except Exception as exc:  # noqa: BLE001
                                 # Text chat is an optional ElevenLabs path. Do not make
                                 # ordinary Android/web chat fail when that websocket or

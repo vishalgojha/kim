@@ -72,6 +72,7 @@ class ElevenTextChat:
         session_id: str,
         message: str,
         request_approval: Callable[[str, Dict[str, Any], str], Dict[str, Any]],
+        device_context: str = "web browser",
     ) -> Dict[str, Any]:
         message = message.strip()
         if not message or len(message) > 8_000:
@@ -96,7 +97,7 @@ class ElevenTextChat:
             await ws.send(json.dumps({
                 "type": "conversation_initiation_client_data",
                 "conversation_config_override": {},
-                "dynamic_variables": {"last_context": context},
+                "dynamic_variables": {"last_context": context, "device_context": device_context[:500]},
             }))
 
             started = False

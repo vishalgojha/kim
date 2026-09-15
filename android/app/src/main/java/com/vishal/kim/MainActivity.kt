@@ -118,7 +118,7 @@ class MainActivity : ComponentActivity() {
             messages.add(ChatMessage(true, text))
             thinking = true
             executor.execute {
-                val raw = runCatching { KimClient(baseUrl, pin, activeUser).chat(text, "android-${activeUser.lowercase()}-${KimPrefs.deviceId(context)}") }
+                val raw = runCatching { KimClient(baseUrl, pin, activeUser).chat(text, "android-${activeUser.lowercase()}-${KimPrefs.deviceId(context)}", "Android phone for $activeUser; mobile apps, notifications, media, volume, flashlight, microphone, and phone status are available") }
                     .getOrElse { "500: ${it.message ?: "Kim is unavailable"}" }
                 val body = raw.substringAfter(": ", raw)
                 val reply = runCatching {

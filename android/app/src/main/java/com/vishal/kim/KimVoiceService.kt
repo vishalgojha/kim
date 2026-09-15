@@ -18,6 +18,8 @@ class KimVoiceService : Service() {
     private var recorder: AudioRecord? = null
     private var player: AudioTrack? = null
     private var recording = false
+    private val user by lazy { KimPrefs.activeUser(this) }
+    private val pin by lazy { KimPrefs.pin(this, user) }
     private val readOnlyTools = setOf(
         "battery", "disk_usage", "known_apps", "running_processes", "system_info",
         "gmail_search", "gmail_read", "gmail_today", "gmail_unanswered", "gmail_contacts",
@@ -29,7 +31,7 @@ class KimVoiceService : Service() {
         super.onCreate()
         val channel = NotificationChannel("kim_voice", "Kim voice", NotificationManager.IMPORTANCE_LOW)
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-        startForeground(1002, Notification.Builder(this, "kim_voice").setContentTitle("Kim is listening").setContentText("Tap stop in the Kim app to end the session").setSmallIcon(android.R.drawable.ic_btn_speak_now).setOngoing(true).build())
+        startForeground(1002, notification("Kim is listening", "Speak naturally; tap the notification to return to Kim"))
         startSession()
     }
 
@@ -37,17 +39,18 @@ class KimVoiceService : Service() {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { stopSelf(); return }
         Thread {
             try {
-                val pin = KimPrefs.open(this).getString("pin", "") ?: ""
-                val urlResponse = KimClient("https://app.vishalojha.me", pin).getVoiceSession()
+                val urlResponse = KimClient("https://app.vishalojha.me", pin, user).getVoiceSession()
+                val code = urlResponse.substringBefore(":").toIntOrNull() ?: 500
+                if (code !in 200..299) throw IllegalStateException(urlResponse.substringAfter(": ").take(240))
                 val url = JSONObject(urlResponse.substringAfter(": ")).getString("url")
                 socket = client.newWebSocket(Request.Builder().url(url).build(), listener)
-            } catch (_: Exception) { stopSelf() }
+            } catch (error: Exception) { showError(error.message ?: "Voice connection failed"); stopSelf() }
         }.start()
     }
 
     private val listener = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
-            webSocket.send("{\"type\":\"conversation_initiation_client_data\",\"conversation_config_override\":{},\"dynamic_variables\":{}}")
+            webSocket.send(JSONObject().put("type", "conversation_initiation_client_data").put("conversation_config_override", JSONObject()).put("dynamic_variables", JSONObject().put("device_context", "Android phone for $user; use mobile capabilities only; reply in the user's language and Roman Hindi when Hindi is typed in Latin letters")).toString())
             startAudio()
         }
         override fun onMessage(webSocket: WebSocket, text: String) {
@@ -64,7 +67,7 @@ class KimVoiceService : Service() {
             } catch (_: Exception) { }
         }
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { stopSelf() }
-        override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { stopSelf() }
+        override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { showError(t.message ?: "Voice connection failed"); stopSelf() }
     }
 
     private fun handleToolCall(json: JSONObject) {
@@ -74,21 +77,24 @@ class KimVoiceService : Service() {
         if (toolCallId.isBlank() || name.isBlank()) return
         Thread {
             try {
-                val pin = KimPrefs.open(this).getString("pin", "") ?: ""
-                val kim = KimClient("https://app.vishalojha.me", pin)
-                val raw = if (name in readOnlyTools) {
-                    kim.runTool(name, parameters)
-                } else {
-                    kim.requestApproval(name, parameters, "Voice requested $name")
-                }
+                val kim = KimClient("https://app.vishalojha.me", pin, user)
+                val raw = kim.runTool(name, parameters)
                 val code = raw.substringBefore(":").toIntOrNull() ?: 500
                 val body = raw.substringAfter(": ", "")
-                val result = if (name in readOnlyTools) body else "Approval requested: $body"
+                val result = body
                 socket?.send(JSONObject().put("type", "client_tool_result").put("tool_call_id", toolCallId).put("result", result).put("is_error", code !in 200..299).toString())
             } catch (error: Exception) {
                 socket?.send(JSONObject().put("type", "client_tool_result").put("tool_call_id", toolCallId).put("result", error.message ?: "tool failed").put("is_error", true).toString())
             }
         }.start()
+    }
+
+    private fun notification(title: String, text: String): Notification =
+        Notification.Builder(this, "kim_voice").setContentTitle(title).setContentText(text)
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now).setOngoing(true).build()
+
+    private fun showError(message: String) {
+        getSystemService(NotificationManager::class.java).notify(1002, notification("Kim voice stopped", message))
     }
 
     private fun startAudio() {
