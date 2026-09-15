@@ -71,6 +71,35 @@ def whatsapp_search(query: str, chat: str = "", limit: int = 20) -> str:
 
 
 @tool(
+    "whatsapp_property_search",
+    "PRIMARY source for property, real-estate, flat, rental, sale, broker, or listing searches. Search Vishal's local WhatsApp messages BEFORE using web search. Read-only; never sends messages.",
+    {
+        "query": {"type": "string", "description": "property requirements, locality, budget, bedrooms, or broker name", "required": True},
+        "limit": {"type": "integer", "description": "maximum results, default 30", "required": False},
+    },
+    timeout=20,
+)
+def whatsapp_property_search(query: str, limit: int = 30) -> str:
+    stopwords = {
+        "find", "search", "look", "looking", "for", "me", "some", "a", "an", "the", "in", "near",
+        "property", "properties", "real", "estate", "flat", "flats", "house", "home", "listing", "listings",
+    }
+    terms = [word for word in query.lower().split() if len(word) > 1 and word not in stopwords]
+    if not terms:
+        return whatsapp_recent(limit)
+    clauses = ["LOWER(m.content) LIKE LOWER(?)" for _ in terms]
+    params: list[object] = [f"%{term}%" for term in terms]
+    params.append(max(1, min(int(limit), 100)))
+    return _rows(
+        "SELECT m.timestamp, c.name, m.sender, m.content, m.is_from_me "
+        "FROM messages m JOIN chats c ON c.jid=m.chat_jid "
+        f"WHERE ({' OR '.join(clauses)}) AND m.content <> '' "
+        "ORDER BY m.timestamp DESC LIMIT ?",
+        tuple(params),
+    )
+
+
+@tool(
     "whatsapp_recent",
     "Read the most recent personal WhatsApp messages, read-only.",
     {"limit": {"type": "integer", "description": "maximum results, default 20", "required": False}},

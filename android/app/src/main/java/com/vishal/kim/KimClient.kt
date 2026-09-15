@@ -5,7 +5,7 @@ import java.net.URL
 import org.json.JSONObject
 import java.net.URLEncoder
 
-class KimClient(private val baseUrl: String, private val token: String) {
+class KimClient(private val baseUrl: String, private val token: String, private val user: String = "") {
     fun getStatus(): String = request("GET", "/v1/status")
     fun getIntegrations(): String = request("GET", "/v1/integrations")
     fun getApprovals(): String = request("GET", "/v1/approvals")
@@ -31,6 +31,7 @@ class KimClient(private val baseUrl: String, private val token: String) {
         connection.requestMethod = method
         connection.connectTimeout = 8000; connection.readTimeout = 12000
         connection.setRequestProperty("X-Kim-Pin", token)
+        if (user.isNotBlank()) connection.setRequestProperty("X-Kim-User", user)
         connection.setRequestProperty("Content-Type", "application/json")
         if (body != null) { connection.doOutput = true; connection.outputStream.use { it.write(body.toByteArray()) } }
         val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream

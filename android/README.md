@@ -1,6 +1,6 @@
 # Kim Android companion
 
-Open the `android/` directory in Android Studio, run it on your phone, enter the Kim PIN, and use the status/pause/wake controls. The latest direct APK is published at [github.com/vishalgojha/kim/releases/tag/kim-latest](https://github.com/vishalgojha/kim/releases/tag/kim-latest). The Actions artifact is a ZIP wrapper; use the Release asset when you want to tap/download an actual `.apk` file.
+Open the `android/` directory in Android Studio, run it on your phone, select the Vishal or Kapil profile, and connect that profile with its private Kim PIN. Each profile stores its credential separately and sends its identity with every request.
 
 The foreground service opens an authenticated, short-lived ElevenLabs WebSocket session, captures 16 kHz microphone PCM, and plays Kim’s response audio. Android shows an ongoing notification while the voice session is active. WorkManager checks for pending approvals in the background. Read-only voice tools execute through the hosted API; write tools create an approval and execute in Coolify or on the laptop relay according to server configuration.
 

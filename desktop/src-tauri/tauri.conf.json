@@ -13,10 +13,10 @@
     "windows": [
       {
         "title": "Kim",
-        "width": 1180,
-        "height": 760,
-        "minWidth": 900,
-        "minHeight": 600,
+        "width": 420,
+        "height": 148,
+        "minWidth": 360,
+        "minHeight": 118,
         "resizable": true,
         "decorations": true,
         "transparent": false,
@@ -24,12 +24,12 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' https://app.vishalojha.me; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src https://app.vishalojha.me"
+      "csp": "default-src 'self' https://app.vishalojha.me http://127.0.0.1:8765 http://localhost:8765; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src https://app.vishalojha.me http://127.0.0.1:8765 http://localhost:8765"
     }
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["deb"],
     "icon": ["icons/kim-orb.svg"],
     "category": "Utility",
     "shortDescription": "Kim personal agent"

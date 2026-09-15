@@ -12,10 +12,11 @@ import org.json.JSONObject
 
 class KimApprovalWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
     override fun doWork(): Result {
-        val pin = KimPrefs.open(applicationContext).getString("pin", "") ?: return Result.success()
+        val user = KimPrefs.activeUser(applicationContext)
+        val pin = KimPrefs.pin(applicationContext, user)
         if (pin.isBlank()) return Result.success()
         return try {
-            val raw = KimClient("https://app.vishalojha.me", pin).getApprovals()
+            val raw = KimClient("https://app.vishalojha.me", pin, user).getApprovals()
             val json = JSONObject(raw.substringAfter(": "))
             val approvals = json.optJSONArray("approvals") ?: return Result.success()
             var pending = 0

@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 from .audio import AudioCapture, AudioOutput
 from .config import ROOT, load_config, save_config
 from .eleven import ElevenAPI, ElevenError
+from .eleven_chat import ElevenTextChat
 from .log import get_logger, setup_logging
 from .permissions import Policy
 from .realtime import RealtimeSession
@@ -85,7 +86,14 @@ async def run_voice(cfg: Dict[str, Any]) -> None:
     if allowed_tools:
         cfg["remote"] = dict(cfg.get("remote") or {})
         cfg["remote"]["allowed_tools"] = [item.strip() for item in allowed_tools.split(",") if item.strip()]
-    remote = RemoteServer(cfg, REGISTRY, asyncio.get_running_loop(), Path.home() / ".aurora" / "voice_command", speaker.speak)
+    remote = RemoteServer(
+        cfg,
+        REGISTRY,
+        asyncio.get_running_loop(),
+        Path.home() / ".aurora" / "voice_command",
+        speaker.speak,
+        text_chat=ElevenTextChat(cfg, eleven, REGISTRY),
+    )
     remote.start()
 
     tasks = [
@@ -259,7 +267,14 @@ async def run_remote(cfg: Dict[str, Any]) -> None:
         except ElevenError:
             log.exception("could not sync hosted ElevenLabs agent; using existing version")
     voice_url = (lambda: eleven.get_signed_url(cfg["elevenlabs"]["agent_id"])) if eleven else None
-    remote = RemoteServer(cfg, REGISTRY, asyncio.get_running_loop(), Path.home() / ".aurora" / "voice_command", voice_url=voice_url)
+    remote = RemoteServer(
+        cfg,
+        REGISTRY,
+        asyncio.get_running_loop(),
+        Path.home() / ".aurora" / "voice_command",
+        voice_url=voice_url,
+        text_chat=ElevenTextChat(cfg, eleven, REGISTRY) if eleven else None,
+    )
     remote.start()
     stop_ev = asyncio.Event()
     loop = asyncio.get_running_loop()

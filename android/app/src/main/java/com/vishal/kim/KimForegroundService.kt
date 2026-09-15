@@ -30,8 +30,9 @@ class KimForegroundService : Service() {
         handler.removeCallbacks(loop); handler.post(loop); return START_STICKY
     }
     private fun poll() {
-        val pin = KimPrefs.open(this).getString("pin", "") ?: return
-        val client = KimClient("https://app.vishalojha.me", pin)
+        val user = KimPrefs.activeUser(this)
+        val pin = KimPrefs.pin(this, user)
+        val client = KimClient("https://app.vishalojha.me", pin, user)
         runCatching { client.heartbeat(deviceId); val raw = client.nextDeviceCommand(deviceId); val command = JSONObject(raw.substringAfter(": ")).optJSONObject("command") ?: return; val result = runCatching { act(command.optString("action"), command.optJSONObject("parameters") ?: JSONObject()) }; client.deviceResult(command.optString("id"), command.optString("action"), result.getOrElse { it.message ?: "failed" }, result.isFailure) }
     }
     private fun act(action: String, p: JSONObject): String = when (action) {

@@ -11,9 +11,14 @@ import httpx
 from .tools.registry import ToolRegistry
 
 
+DIRECT_TOOLS = {
+    # Safe, reversible local controls should feel immediate in the desktop app.
+    "launch_app", "navigate_browser",
+}
+
 WRITE_TOOLS = {
     "gmail_send", "calendar_create", "whatsapp_send", "type_text", "press_key",
-    "clipboard_set", "volume_set", "launch_app", "navigate_browser", "run_shell", "start_task",
+    "clipboard_set", "volume_set", "run_shell", "start_task",
     "cancel_task", "schedule_remind", "schedule_every", "schedule_cancel",
     "file_write", "file_edit", "file_delete", "knowledge_ingest", "opencode_run",
 }
@@ -79,9 +84,10 @@ class AgentCore:
                         args = json.loads(fn.get("arguments") or "{}")
                     except json.JSONDecodeError:
                         args = {}
+                    require_approval = os.environ.get("KIM_REQUIRE_APPROVAL", "0").strip().lower() in {"1", "true", "yes", "on"}
                     if name not in self.registry.names():
                         result, is_error = f"Unknown tool: {name}", True
-                    elif name in WRITE_TOOLS:
+                    elif require_approval and name in WRITE_TOOLS and name not in DIRECT_TOOLS:
                         approval = request_approval(name, args, f"Kim wants to run {name}")
                         result, is_error = self._approval_text(name, args) + f" Approval ID: {approval['id']}.", False
                     else:

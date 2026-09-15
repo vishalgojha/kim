@@ -1,13 +1,14 @@
 [Unit]
-Description=Kim floating assistant (voice + watcher)
+Description=Kim local assistant API (chat only)
 After=sound.target
-Wants=aurora-mic.service
 
 [Service]
 Type=simple
 WorkingDirectory=/home/vishal/aurora
 EnvironmentFile=/home/vishal/aurora/.env
-ExecStart=/home/vishal/aurora/.venv/bin/python -m aurora voice
+Environment=KIM_REMOTE_HOST=127.0.0.1
+Environment=KIM_PORT=8765
+ExecStart=/home/vishal/aurora/.venv/bin/python -m aurora serve
 Restart=on-failure
 RestartSec=3
 

@@ -22,6 +22,7 @@ from typing import Any, Awaitable, Callable, Dict, Optional
 from urllib.parse import parse_qs, urlencode, urlparse
 
 from .agent import AgentCore
+from .eleven_chat import ElevenTextChat
 from .tools.registry import ToolRegistry
 
 log = logging.getLogger("aurora.remote")
@@ -36,6 +37,7 @@ class RemoteServer:
         control_path: Path,
         speak: Optional[Callable[[str], Awaitable[None]]] = None,
         voice_url: Optional[Callable[[], str]] = None,
+        text_chat: Optional[ElevenTextChat] = None,
     ) -> None:
         remote = cfg.get("remote", {})
         self.enabled = bool(remote.get("enabled", False))
@@ -55,6 +57,7 @@ class RemoteServer:
         self.control_path = control_path
         self.speak = speak
         self.voice_url = voice_url
+        self.text_chat = text_chat
         self.audit_path = Path(os.environ.get("KIM_REMOTE_AUDIT_PATH", str(remote.get("audit_path", "~/.aurora/remote-audit.jsonl")))).expanduser()
         self.state_path = Path(os.environ.get("KIM_REMOTE_STATE_PATH", str(remote.get("state_path", "~/.aurora/remote-state.json")))).expanduser()
         self.approvals: Dict[str, Dict[str, Any]] = {}
@@ -205,8 +208,9 @@ class RemoteServer:
                         self._reply(400, {"error": str(exc)})
                     return
                 if self.path == "/v1/approvals":
+                    user = self.headers.get("X-Kim-User", "").strip()
                     with owner.approvals_lock:
-                        items = [dict(v, parameters=None) for v in owner.approvals.values()]
+                        items = [dict(v, parameters=None) for v in owner.approvals.values() if not user or v.get("user", "default") in {user, "default"}]
                     self._reply(200, {"ok": True, "approvals": items})
                     return
                 if self.path == "/v1/commands/next":
@@ -327,9 +331,20 @@ class RemoteServer:
                         return
                     if self.path == "/v1/chat":
                         message = str(data.get("message", ""))
-                        session_id = str(data.get("conversation_id", "web"))
-                        result = owner._run(owner.agent.chat(session_id, message, owner.create_approval))
-                        owner._audit("chat", {"conversation_id": session_id[:100], "tools": result.get("tools_used", [])}, True)
+                        user = self.headers.get("X-Kim-User", "").strip() or "default"
+                        session_id = f"{user}:{data.get('conversation_id', 'web')}"
+                        if owner.text_chat is not None:
+                            try:
+                                result = owner._run(owner.text_chat.chat(session_id, message, owner.create_approval))
+                            except Exception as exc:  # noqa: BLE001
+                                # Text chat is an optional ElevenLabs path. Do not make
+                                # ordinary Android/web chat fail when that websocket or
+                                # signed URL is temporarily unavailable.
+                                log.warning("ElevenLabs text chat failed; falling back to Kim agent: %s", exc)
+                                result = owner._run(owner.agent.chat(session_id, message, owner.create_approval))
+                        else:
+                            result = owner._run(owner.agent.chat(session_id, message, owner.create_approval))
+                        owner._audit("chat", {"user": user, "conversation_id": session_id[:100], "tools": result.get("tools_used", [])}, True)
                         self._reply(200, result)
                         return
                     if self.path == "/v1/research":
@@ -358,7 +373,7 @@ class RemoteServer:
                         if name not in owner.registry.names():
                             raise ValueError("unknown tool")
                         approval_id = uuid.uuid4().hex
-                        record = {"id": approval_id, "name": name, "parameters": data.get("parameters", {}), "summary": str(data.get("summary", name))[:500], "status": "pending", "created_at": time.time()}
+                        record = {"id": approval_id, "name": name, "parameters": data.get("parameters", {}), "summary": str(data.get("summary", name))[:500], "status": "pending", "user": self.headers.get("X-Kim-User", "").strip() or "default", "created_at": time.time()}
                         with owner.approvals_lock:
                             owner.approvals[approval_id] = record
                             owner._persist_state()
@@ -377,6 +392,10 @@ class RemoteServer:
                                 return
                             if record["status"] != "pending":
                                 self._reply(409, {"error": "approval already resolved"})
+                                return
+                            user = self.headers.get("X-Kim-User", "").strip()
+                            if user and record.get("user", "default") not in {user, "default"}:
+                                self._reply(403, {"error": "approval belongs to another user"})
                                 return
                             record["status"] = "approved" if action == "approve" else "rejected"
                             owner._persist_state()
@@ -415,6 +434,10 @@ class RemoteServer:
                     self._reply(404, {"error": "not found"})
                 except (ValueError, json.JSONDecodeError) as exc:
                     self._reply(400, {"error": str(exc)})
+                except RuntimeError as exc:
+                    log.warning("remote request failed: %s", exc)
+                    status = 503 if "not configured" in str(exc).lower() else 502
+                    self._reply(status, {"error": str(exc)})
                 except Exception:
                     log.exception("remote request failed")
                     self._reply(500, {"error": "internal error"})

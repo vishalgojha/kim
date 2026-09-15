@@ -1,230 +1,234 @@
 package com.vishal.kim
 
 import android.Manifest
-import android.app.Activity
-import android.app.AlertDialog
 import android.content.Intent
-import android.provider.Settings
-import android.content.res.ColorStateList
-import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.view.View
-import android.view.ViewGroup
-import android.widget.*
+import androidx.activity.compose.setContent
+import androidx.activity.ComponentActivity
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.Executors
+import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
-class MainActivity : Activity() {
-    private val executor = Executors.newSingleThreadExecutor()
-    private val prefs by lazy { KimPrefs.open(this) }
-    private lateinit var pin: EditText
-    private lateinit var status: TextView
-    private lateinit var approvalsBox: LinearLayout
-    private lateinit var chatBox: TextView
-    private lateinit var messageInput: EditText
+private val KimBackground = Color(0xFF08090B)
+private val KimPanel = Color(0xFF15171C)
+private val KimBorder = Color(0xFF2A2E36)
+private val KimMuted = Color(0xFF9299A8)
+
+private data class ChatMessage(val user: Boolean, val text: String)
+
+class MainActivity : ComponentActivity() {
     private val baseUrl = "https://app.vishalojha.me"
+    private val executor = Executors.newSingleThreadExecutor()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        scheduleApprovalWatcher()
-        if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 6)
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER_HORIZONTAL; setPadding(24, 36, 24, 22) }
-        pin = EditText(this).apply { setText(prefs.getString("pin", "")) }
-        TextView(this).apply { text = "Kim"; textSize = 30f; gravity = android.view.Gravity.CENTER }.also(root::addView)
-        TextView(this).apply { text = "Your personal AI companion"; textSize = 15f; gravity = android.view.Gravity.CENTER; setPadding(0, 2, 0, 8) }.also(root::addView)
-        root.addView(KimOrbView(this), LinearLayout.LayoutParams(-1, 230))
-        TextView(this).apply { text = "How can I\nhelp you today?"; textSize = 31f; gravity = android.view.Gravity.CENTER; setTextColor(Color.rgb(24, 24, 40)); setPadding(0, 4, 0, 18) }.also(root::addView)
-        if (prefs.getString("pin", "").isNullOrBlank()) addSetupCard(root)
-        status = TextView(this).apply { text = "Ready when you are"; textSize = 14f; gravity = android.view.Gravity.CENTER; setPadding(0, 8, 0, 8) }
-        root.addView(status)
-        chatBox = TextView(this).apply { text = ""; textSize = 15f; setPadding(14, 12, 14, 12); setBackgroundColor(Color.WHITE) }
-        root.addView(chatBox, LinearLayout.LayoutParams(-1, 180))
-        messageInput = EditText(this).apply { hint = "Ask Kim anything…"; singleLine = false; maxLines = 3; setTextColor(Color.rgb(24, 24, 40)); setHintTextColor(Color.GRAY) }
-        root.addView(messageInput)
-        root.addView(Button(this).apply { text = "Ask Kim"; setOnClickListener { sendChat() } })
-        root.addView(Button(this).apply { text = "Talk to Kim"; setOnClickListener { startListening() } })
-        root.addView(TextView(this).apply { text = "Try asking"; textSize = 15f; setPadding(0, 8, 0, 5) })
-        val suggestions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER }
-        suggestions.addView(Button(this).apply { text = "My day"; setOnClickListener { runQuickAction("gmail_today", "Checking your day…") } })
-        suggestions.addView(Button(this).apply { text = "Calendar"; setOnClickListener { runQuickAction("calendar_upcoming", "Checking your calendar…") } })
-        root.addView(suggestions)
-        root.addView(Button(this).apply { text = "Help me send an email"; setOnClickListener { showEmailDialog() } })
-        root.addView(TextView(this).apply { text = "Requests"; textSize = 19f; setPadding(0, 10, 0, 4) })
-        approvalsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(approvalsBox)
-        root.addView(Button(this).apply { text = "Review requests"; setOnClickListener { refreshApprovals() } })
-        root.addView(Button(this).apply { text = "Settings"; setOnClickListener { showSettings() } })
-        root.addView(TextView(this).apply { text = "⌂        ✦        ◷        ⚙"; textSize = 24f; gravity = android.view.Gravity.CENTER; setPadding(0, 18, 0, 0) })
-        val screen = ScrollView(this).apply { setBackgroundColor(Color.rgb(245, 249, 250)); addView(root) }
-        theme(screen)
-        setContentView(screen)
-        if (prefs.getString("pin", "").isNullOrBlank()) status.text = "Finish setup below to connect Kim"
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "kim-approval-watch", ExistingPeriodicWorkPolicy.UPDATE,
+            PeriodicWorkRequestBuilder<KimApprovalWorker>(15, TimeUnit.MINUTES).build()
+        )
+        setContent { KimTheme { KimApp() } }
     }
 
-    private fun addSetupCard(root: LinearLayout) {
-        val card = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(16, 10, 16, 10); setBackgroundColor(Color.WHITE) }
-        card.addView(TextView(this).apply { text = "Set up Kim on this phone"; textSize = 18f; setTextColor(Color.rgb(24, 24, 40)) })
-        val setupPin = EditText(this).apply { hint = "Enter your private PIN"; inputType = 0x81; maxLines = 1; setTextColor(Color.rgb(24, 24, 40)) }
-        card.addView(setupPin)
-        card.addView(Button(this).apply { text = "Connect phone"; setOnClickListener { connectPhone(setupPin.text.toString()) } })
-        card.addView(Button(this).apply { text = "Give Kim phone permissions"; setOnClickListener { showSettings() } })
-        root.addView(card)
-    }
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun KimApp() {
+        val context = this@MainActivity
+        val scope = rememberCoroutineScope()
+        val drawer = rememberDrawerState(androidx.compose.material3.DrawerValue.Closed)
+        val messages = remember { mutableStateListOf<ChatMessage>() }
+        var activeUser by remember { mutableStateOf(KimPrefs.activeUser(context)) }
+        var input by remember { mutableStateOf("") }
+        var thinking by remember { mutableStateOf(false) }
+        var profileMenu by remember { mutableStateOf(false) }
+        var actionMenu by remember { mutableStateOf(false) }
+        var signIn by remember { mutableStateOf(KimPrefs.pin(context, activeUser).isBlank()) }
+        var pin by remember { mutableStateOf(KimPrefs.pin(context, activeUser)) }
+        val listState = rememberLazyListState()
 
-    private fun runQuickAction(name: String, label: String) {
-        status.text = label
-        executor.execute { val value = runCatching { client().runTool(name, JSONObject()) }.getOrElse { it.message ?: "Kim is unavailable" }; runOnUiThread { status.text = value } }
-    }
-
-    private fun showSettings() {
-        val form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 0, 24, 0) }
-        val setupPin = EditText(this).apply { hint = "Private Kim PIN"; setText(prefs.getString("pin", "")); inputType = 0x81; maxLines = 1 }
-        form.addView(setupPin)
-        form.addView(Button(this).apply { text = "Connect this phone"; setOnClickListener { connectPhone(setupPin.text.toString()) } })
-        form.addView(Button(this).apply { text = "Allow microphone"; setOnClickListener { requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 5) } })
-        form.addView(Button(this).apply { text = "Allow notifications"; setOnClickListener { if (android.os.Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 6) } })
-        form.addView(Button(this).apply { text = "Notification access"; setOnClickListener { startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")) } })
-        form.addView(Button(this).apply { text = "Accessibility controls"; setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } })
-        AlertDialog.Builder(this).setTitle("Kim settings").setView(form).setNegativeButton("Close", null).show()
-    }
-
-    private fun showEmailDialog() {
-        val form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 0, 24, 0) }
-        val to = EditText(this).apply { hint = "To"; inputType = android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS }
-        val subject = EditText(this).apply { hint = "Subject" }
-        val body = EditText(this).apply { hint = "Message"; minLines = 5; gravity = android.view.Gravity.TOP }
-        form.addView(to); form.addView(subject); form.addView(body)
-        AlertDialog.Builder(this).setTitle("Prepare an email").setView(form).setNegativeButton("Cancel", null).setPositiveButton("Ask Kim to send") { _, _ ->
-            val params = JSONObject().put("to", to.text.toString()).put("subject", subject.text.toString()).put("body", body.text.toString())
-            requestApproval("gmail_send", params.toString(), "Send email to ${to.text}")
-        }.show()
-    }
-
-    private fun theme(view: View) {
-        when (view) {
-            is Button -> {
-                view.setTextColor(Color.BLACK)
-                view.background = GradientDrawable().apply { setColor(Color.rgb(237, 237, 237)); cornerRadius = 10f }
-                view.setPadding(18, 12, 18, 12)
-            }
-            is EditText -> {
-                view.setTextColor(Color.rgb(24, 24, 40))
-                view.setHintTextColor(Color.rgb(120, 120, 130))
-                view.backgroundTintList = ColorStateList.valueOf(Color.rgb(190, 190, 198))
-            }
-            is TextView -> view.setTextColor(Color.rgb(24, 24, 40))
-        }
-        if (view is ViewGroup) for (i in 0 until view.childCount) theme(view.getChildAt(i))
-    }
-
-    private fun client() = KimClient(baseUrl, pin.text.toString().trim())
-    private fun sendChat() {
-        val message = messageInput.text.toString().trim()
-        if (message.isBlank()) return
-        chatBox.text = "You: $message\n\nKim is thinking…"
-        messageInput.text.clear()
-        executor.execute {
-            val raw = runCatching { client().chat(message, "android-${KimPrefs.deviceId(this)}") }.getOrElse { "500: ${it.message ?: "Kim is unavailable"}" }
-            val body = raw.substringAfter(": ", raw)
-            val reply = runCatching { JSONObject(body).optString("message", body) }.getOrDefault(body)
-            runOnUiThread { chatBox.text = "You: $message\n\nKim: $reply" }
-        }
-    }
-    private fun refresh() { executor.execute { val value = runCatching { client().getStatus() }.getOrElse { it.message ?: "connection failed" }; runOnUiThread { status.text = value } } }
-    private fun refreshIntegrations() { executor.execute { val value = runCatching { client().getIntegrations() }.getOrElse { it.message ?: "request failed" }; runOnUiThread { status.text = value } } }
-    private fun requestApproval(name: String, rawParameters: String, summary: String) {
-        executor.execute {
-            val value = runCatching {
-                val parameters = JSONObject(rawParameters.ifBlank { "{}" })
-                client().requestApproval(name.trim(), parameters, summary.trim().ifBlank { "Requested from Android" })
-            }.getOrElse { it.message ?: "request failed" }
-            runOnUiThread { status.text = value; refreshApprovals() }
-        }
-    }
-    private fun showRequestDialog() {
-        val form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 0, 24, 0) }
-        val name = EditText(this).apply { hint = "Action (e.g. send email)" }
-        val parameters = EditText(this).apply { hint = "Details as JSON (optional)"; setText("{}"); minLines = 3; gravity = android.view.Gravity.TOP }
-        val summary = EditText(this).apply { hint = "What should Kim do?" }
-        form.addView(name); form.addView(parameters); form.addView(summary)
-        AlertDialog.Builder(this)
-            .setTitle("Request approval")
-            .setView(form)
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Submit") { _, _ -> requestApproval(name.text.toString(), parameters.text.toString(), summary.text.toString()) }
-            .show()
-    }
-    private fun control(action: String) { executor.execute { val value = runCatching { client().control(action) }.getOrElse { it.message ?: "request failed" }; runOnUiThread { status.text = value } } }
-    private fun refreshApprovals() {
-        executor.execute {
-            val result = runCatching { client().getApprovals() }
-            val value = result.getOrElse { it.message ?: "request failed" }
-            runOnUiThread {
-                status.text = if (result.isSuccess) "Approvals refreshed" else value
-                renderApprovals(value)
+        fun send() {
+            val text = input.trim()
+            if (text.isBlank() || thinking) return
+            if (pin.isBlank()) { signIn = true; return }
+            input = ""
+            messages.add(ChatMessage(true, text))
+            thinking = true
+            executor.execute {
+                val raw = runCatching { KimClient(baseUrl, pin, activeUser).chat(text, "android-${activeUser.lowercase()}-${KimPrefs.deviceId(context)}") }
+                    .getOrElse { "500: ${it.message ?: "Kim is unavailable"}" }
+                val body = raw.substringAfter(": ", raw)
+                val reply = runCatching {
+                    val json = JSONObject(body)
+                    json.optString("message").ifBlank { json.optString("error").ifBlank { body } }
+                }.getOrDefault(body)
+                runOnUiThread { messages.add(ChatMessage(false, reply)); thinking = false }
             }
         }
-    }
-    private fun renderApprovals(raw: String) {
-        approvalsBox.removeAllViews()
-        try {
-            val approvals = JSONObject(raw.substringAfter(": ")).optJSONArray("approvals")
-            if (approvals == null || approvals.length() == 0) {
-                approvalsBox.addView(TextView(this).apply { text = "No approvals waiting"; setPadding(0, 12, 0, 12) })
-                return
-            }
-            for (i in 0 until approvals.length()) {
-                val item = approvals.getJSONObject(i)
-                val id = item.optString("id")
-                val card = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 12, 0, 12) }
-                card.addView(TextView(this).apply { text = "${item.optString("name")}\n${item.optString("summary")}\nStatus: ${item.optString("status")}"; textSize = 15f })
-                if (item.optString("status") == "pending") {
-                    val buttons = LinearLayout(this)
-                    buttons.addView(Button(this).apply { text = "Approve"; setOnClickListener { resolveApproval(id, true) } }, LinearLayout.LayoutParams(0, -2, 1f))
-                    buttons.addView(Button(this).apply { text = "Reject"; setOnClickListener { resolveApproval(id, false) } }, LinearLayout.LayoutParams(0, -2, 1f))
-                    card.addView(buttons)
+
+        LaunchedEffect(messages.size) { if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex) }
+
+        ModalNavigationDrawer(
+            drawerState = drawer,
+            drawerContent = {
+                ModalDrawerSheet(drawerContainerColor = KimPanel) {
+                    Text("Kim", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(24.dp))
+                    NavigationDrawerItem(label = { Text("New chat") }, selected = false, onClick = { messages.clear(); scope.launch { drawer.close() } }, modifier = Modifier.padding(horizontal = 12.dp))
+                    NavigationDrawerItem(label = { Text("Research") }, selected = false, onClick = { scope.launch { drawer.close() } }, modifier = Modifier.padding(horizontal = 12.dp))
+                    NavigationDrawerItem(label = { Text("Approvals") }, selected = false, onClick = { actionMenu = true; scope.launch { drawer.close() } }, modifier = Modifier.padding(horizontal = 12.dp))
+                    NavigationDrawerItem(label = { Text("Knowledge") }, selected = false, onClick = { scope.launch { drawer.close() } }, modifier = Modifier.padding(horizontal = 12.dp))
+                    Spacer(Modifier.weight(1f))
+                    NavigationDrawerItem(label = { Text("Settings") }, selected = false, icon = { Icon(Icons.Default.Settings, null) }, onClick = { signIn = true; scope.launch { drawer.close() } }, modifier = Modifier.padding(12.dp))
                 }
-                approvalsBox.addView(card)
             }
-        } catch (_: Exception) {
-            approvalsBox.addView(TextView(this).apply { text = raw })
-        }
-    }
-    private fun resolveApproval(id: String, approve: Boolean) {
-        executor.execute {
-            val value = runCatching { if (approve) client().approve(id) else client().reject(id) }.getOrElse { it.message ?: "request failed" }
-            runOnUiThread { status.text = value; refreshApprovals() }
-        }
-    }
-    private fun startVoiceSession() { executor.execute { val value = runCatching { client().getVoiceSession() }.getOrElse { it.message ?: "voice unavailable" }; runOnUiThread { status.text = value } } }
-    private fun startListening() {
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 5)
-        else startForegroundService(Intent(this, KimVoiceService::class.java))
-    }
-    private fun startDeviceBridge() {
-        startForegroundService(Intent(this, KimForegroundService::class.java))
-    }
-    private fun connectPhone(rawPin: String) {
-        val value = rawPin.trim()
-        if (value.isBlank()) { status.text = "Enter your private PIN first"; return }
-        status.text = "Connecting securely…"
-        executor.execute {
-            val result = runCatching { KimClient(baseUrl, value).getStatus() }
-            runOnUiThread {
-                if (result.isSuccess && result.getOrThrow().startsWith("200:")) {
-                    prefs.edit().putString("pin", value).apply(); pin.setText(value); startDeviceBridge(); status.text = "Connected to Kim"
-                } else status.text = "Could not connect — check your PIN"
+        ) {
+            Scaffold(
+                containerColor = KimBackground,
+                topBar = {
+                    TopAppBar(
+                        title = { Text("Kim", fontWeight = FontWeight.SemiBold) },
+                        navigationIcon = { IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(Icons.Default.Menu, "Menu") } },
+                        actions = {
+                            Box {
+                                Button(onClick = { profileMenu = true }, colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent), contentPadding = PaddingValues(horizontal = 10.dp)) { Text(activeUser, color = KimMuted) }
+                                DropdownMenu(expanded = profileMenu, onDismissRequest = { profileMenu = false }) {
+                                    KimPrefs.users.forEach { user -> DropdownMenuItem(text = { Text("Using Kim as $user") }, onClick = { activeUser = user; pin = KimPrefs.pin(context, user); signIn = pin.isBlank(); KimPrefs.setActiveUser(context, user); profileMenu = false }) }
+                                }
+                            }
+                            IconButton(onClick = { actionMenu = true }) { Icon(Icons.Default.MoreVert, "More") }
+                        }
+                    )
+                }
+            ) { padding ->
+                Column(Modifier.fillMaxSize().padding(padding).navigationBarsPadding()) {
+                    LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp), contentPadding = PaddingValues(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                        if (messages.isEmpty()) item { Welcome() }
+                        items(messages) { message -> MessageBubble(message) }
+                        if (thinking) item { MessageBubble(ChatMessage(false, "Kim is thinking…")) }
+                    }
+                    Composer(input, { input = it }, { send() }, { if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) context.requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 5) else context.startForegroundService(Intent(context, KimVoiceService::class.java)) }, { actionMenu = true })
+                }
             }
         }
+
+        if (actionMenu) {
+            DropdownMenu(expanded = true, onDismissRequest = { actionMenu = false }) {
+                DropdownMenuItem(text = { Text("Prepare my day") }, onClick = { input = "Prepare my day"; actionMenu = false })
+                DropdownMenuItem(text = { Text("Show my calendar") }, onClick = { input = "Show my calendar"; actionMenu = false })
+                DropdownMenuItem(text = { Text("Review requests") }, onClick = { input = "Review my requests"; actionMenu = false })
+                DropdownMenuItem(text = { Text("Settings / connect phone") }, onClick = { signIn = true; actionMenu = false })
+            }
+        }
+        if (signIn) {
+            AlertDialog(onDismissRequest = { signIn = false }, title = { Text("Connect $activeUser to Kim") }, text = { OutlinedTextField(value = pin, onValueChange = { pin = it }, label = { Text("Private workspace key") }, visualTransformation = PasswordVisualTransformation(), singleLine = true) }, confirmButton = { Button(onClick = { connect(activeUser, pin); signIn = false }) { Text("Connect") } }, dismissButton = { Button(onClick = { signIn = false }) { Text("Later") } })
+        }
     }
-    private fun scheduleApprovalWatcher() {
-        val request = PeriodicWorkRequestBuilder<KimApprovalWorker>(15, TimeUnit.MINUTES).build()
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork("kim-approval-watcher", ExistingPeriodicWorkPolicy.KEEP, request)
+
+    private fun connect(user: String, value: String) {
+        val clean = value.trim()
+        if (clean.isBlank()) return
+        executor.execute {
+            val result = runCatching { KimClient(baseUrl, clean, user).getStatus() }
+            if (result.isSuccess && result.getOrThrow().startsWith("200:")) { KimPrefs.savePin(this, user, clean); KimPrefs.setActiveUser(this, user) }
+        }
     }
+}
+
+@Composable
+private fun Welcome() {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(top = 100.dp)) {
+        Box(Modifier.size(76.dp).background(Color(0xFFB9C0CA), RoundedCornerShape(24.dp)), contentAlignment = Alignment.Center) { Box(Modifier.size(44.dp).background(Color(0xFF111318), RoundedCornerShape(15.dp))) }
+        Spacer(Modifier.height(24.dp))
+        Text("How can I help you?", fontSize = 30.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+        Spacer(Modifier.height(8.dp))
+        Text("Ask Kim anything", color = KimMuted, fontSize = 16.sp)
+    }
+}
+
+@Composable
+private fun MessageBubble(message: ChatMessage) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.user) Arrangement.End else Arrangement.Start) {
+        Text(message.text, color = if (message.user) Color(0xFF17191D) else Color(0xFFE5E7EB), fontSize = 16.sp, modifier = Modifier.background(if (message.user) Color(0xFFE7E9ED) else KimPanel, RoundedCornerShape(20.dp)).padding(horizontal = 16.dp, vertical = 12.dp))
+    }
+}
+
+@Composable
+private fun Composer(value: String, onValue: (String) -> Unit, onSend: () -> Unit, onMic: () -> Unit, onMenu: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.Bottom) {
+        Box {
+            IconButton(onClick = onMenu, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.Add, "Actions", tint = KimMuted) }
+        }
+        Spacer(Modifier.width(6.dp))
+        OutlinedTextField(value = value, onValueChange = onValue, modifier = Modifier.weight(1f), placeholder = { Text("Message Kim…", color = KimMuted) }, minLines = 1, maxLines = 6, shape = RoundedCornerShape(24.dp), colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = KimPanel, focusedContainerColor = KimPanel, unfocusedBorderColor = KimBorder, focusedBorderColor = Color(0xFF8B93A3), unfocusedTextColor = Color.White, focusedTextColor = Color.White))
+        IconButton(onClick = onMic, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.Mic, "Voice", tint = KimMuted) }
+        IconButton(onClick = onSend, modifier = Modifier.size(48.dp)) { Icon(Icons.AutoMirrored.Filled.Send, "Send", tint = Color.White) }
+    }
+}
+
+@Composable
+private fun KimTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = darkColorScheme(background = KimBackground, surface = KimPanel, primary = Color(0xFFE7E9ED), onSurface = Color.White), content = content)
 }

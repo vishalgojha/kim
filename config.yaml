@@ -29,7 +29,7 @@ user:
   building: PropAI
 turn:
   turn_timeout: 7.0
-  turn_eagerness: low
+  turn_eagerness: normal
   silence_end_call_timeout: -1.0
 audio:
   input_device: ''
@@ -42,6 +42,7 @@ audio:
   voice_hangover_ms: 900
 permissions:
   default: allow
+  require_approval: false
   ask_for:
   - sudo
   - apt
