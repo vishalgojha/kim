@@ -132,7 +132,17 @@ async function knowledge() { shell(`<section class="panel-page"><div class="intr
 function settings() { const base = prompt("Kim server URL", state.base); if (base === null) return; const pin = prompt("Kim PIN", state.pin); if (pin === null) return; state.base = base.replace(/\/$/, ""); state.pin = pin; localStorage.setItem("kim.server", state.base); localStorage.setItem("kim.pin", state.pin); render(); }
 async function connectPropAI() {
   try {
-    const data = await api("/v1/propai/start");
+    let data;
+    try {
+      data = await api("/v1/propai/start");
+    } catch (firstError) {
+      // Older installs may still point at the laptop-only API. PropAI OAuth
+      // belongs to the hosted control plane, so transparently migrate them.
+      if (state.base === DEFAULT_SERVER) throw firstError;
+      state.base = DEFAULT_SERVER;
+      localStorage.setItem("kim.server", DEFAULT_SERVER);
+      data = await api("/v1/propai/start");
+    }
     window.open(data.auth_url, "_blank");
   } catch (error) {
     alert(`PropAI connection could not start: ${(error as Error).message}`);
