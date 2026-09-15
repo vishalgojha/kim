@@ -25,9 +25,14 @@ case "${1:-}" in
     mkdir -p "$HOME/.local/share/applications"
     # Prefer the packaged Tauri launcher when it exists. The legacy lowercase
     # launcher otherwise creates a second Kim icon in GNOME's app grid.
-    if [ ! -e "$HOME/.local/share/applications/Kim.desktop" ] && [ ! -e "/usr/share/applications/Kim.desktop" ]; then
+    if [ -e "/usr/share/applications/Kim.desktop" ]; then
+      # Remove the old per-user entry that used the mobile/orb icon and
+      # launched the legacy service.sh wrapper.
+      rm -f "$HOME/.local/share/applications/Kim.desktop" "$DESKTOP_DEST"
+    elif [ ! -e "$HOME/.local/share/applications/Kim.desktop" ]; then
       cp "$DESKTOP_SRC" "$DESKTOP_DEST"
     fi
+    update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true
     if [ -f "$DIR/systemd/aurora-mic.service" ]; then
       cp "$DIR/systemd/aurora-mic.service" "$HOME/.config/systemd/user/"
     fi

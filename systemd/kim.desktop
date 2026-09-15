@@ -2,8 +2,8 @@
 Type=Application
 Name=Kim
 Comment=Kim voice assistant
-Exec=/home/vishal/aurora/service.sh open
-Icon=/home/vishal/aurora/assets/kim-orb.svg
+Exec=kim-desktop
+Icon=kim-desktop
 Terminal=false
 Categories=Utility;Accessibility;
 StartupWMClass=Kim
