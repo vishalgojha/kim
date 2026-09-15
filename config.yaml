@@ -1,7 +1,7 @@
 elevenlabs:
   api_key_env: ELEVENLABS_API_KEY
-  agent_id: agent_8501m292z3zzenrvmfyhyhzss022
-  voice_id: p9aflnsbBe1o0aDeQa97
+  agent_id: agent_2701m2keetc8en6ab33httg34qa3
+  voice_id: jpICOesdLlRSc39O1UB5
   region: ''
   tts_model: eleven_multilingual_v2
   conversational_tts_model: eleven_multilingual_v2
@@ -22,7 +22,7 @@ agent:
 user:
   name: Vishal
   birth_date: '1984-10-13'
-  description: tall, bald, and handsome — his words
+  description: "tall, bald, and handsome \u2014 his words"
   likes:
   - beer
   - coffee
