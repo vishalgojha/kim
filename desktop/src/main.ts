@@ -7,6 +7,7 @@ const DEFAULT_SERVER = "https://app.vishalojha.me";
 const win = getCurrentWindow();
 const savedServer = localStorage.getItem("kim.server") || "";
 const configVersion = localStorage.getItem("kim.server.version");
+const pointsToLocalMachine = /^(https?:\/\/)?(127\.0\.0\.1|localhost)(:\d+)?$/i.test(savedServer.replace(/\/$/, ""));
 if (configVersion !== "2") {
   // Version 1 pointed the desktop at the laptop-only API. The web client uses
   // the hosted Kim API, so migrate existing installs to the shared backend.
@@ -16,7 +17,7 @@ if (configVersion !== "2") {
 const state = {
   page: "chat" as Page,
   compact: localStorage.getItem("kim.view") !== "full",
-  base: configVersion === "2" && savedServer ? savedServer : DEFAULT_SERVER,
+  base: configVersion === "2" && savedServer && !pointsToLocalMachine ? savedServer : DEFAULT_SERVER,
   pin: localStorage.getItem("kim.pin") || "",
   messages: [] as { role: string; text: string }[],
   voice: "online",
