@@ -83,13 +83,14 @@ function shell(content: string) {
       <div class="brand"><span class="mark"><i></i><i></i></span><span>Kim</span></div>
       <div class="eyebrow">PERSONAL AGENT</div>
       <nav>${nav("chat", "⌁", "Talk to Kim")}${nav("research", "⌕", "Research")}${nav("approvals", "✓", "Approvals")}${nav("knowledge", "▣", "Knowledge")}</nav>
-      <div class="rail-bottom"><button id="settings" class="rail-action">⚙ <span>Settings</span></button><div class="connection"><span class="dot"></span><span>Local Kim</span></div></div>
+      <div class="rail-bottom"><button id="settings" class="rail-action">⚙ <span>Settings</span></button><div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-label">Checking laptop relay…</span></div></div>
     </aside>
     <main class="main"><header><div><div class="kicker">KIM WORKSPACE</div><h1>${title()}</h1></div><div class="header-actions"><span class="pill"><span class="dot"></span> Online</span><button id="compact" class="icon-button" title="Collapse">▾</button><button id="refresh" class="icon-button" title="Refresh">↻</button></div></header>${content}</main>
   </div>`;
   document.querySelectorAll<HTMLElement>("[data-page]").forEach((el) => el.onclick = () => { state.page = el.dataset.page as Page; render(); });
   document.querySelector("#settings")?.addEventListener("click", settings);
   document.querySelector("#compact")?.addEventListener("click", () => toggleView(true));
+  updateConnection();
 }
 function nav(page: Page, icon: string, label: string) { return `<button data-page="${page}" class="nav-item ${state.page === page ? "active" : ""}"><b>${icon}</b><span>${label}</span></button>`; }
 function title() { return ({ chat: "What should we do?", research: "Research with Kim", approvals: "Review requests", knowledge: "Your knowledge" }[state.page]); }
@@ -128,5 +129,23 @@ function research() {
 async function approvals() { shell(`<section class="panel-page"><div class="intro">Actions that can affect other people or external services wait here for your approval.</div><div id="approval-list" class="list"><div class="loading"><span class="spinner"></span> Loading approvals…</div></div></section>`); try { const data = await api("/v1/approvals"); const items = (data.approvals || data || []).filter((item: any) => item.status === "pending"); document.querySelector("#approval-list")!.innerHTML = items.length ? items.map((item: any) => `<article class="list-card"><div><strong>${esc(item.tool || item.action || item.name || "Requested action")}</strong><p>${esc(item.summary || JSON.stringify(item.args || item.payload || {}))}</p></div><div class="card-actions"><button data-approval="${esc(item.id)}" data-action="approve">Approve</button><button class="muted" data-approval="${esc(item.id)}" data-action="reject">Reject</button></div></article>`).join("") : `<div class="empty"><p>No requests waiting.</p></div>`; document.querySelectorAll<HTMLButtonElement>("[data-approval]").forEach((button) => button.onclick = async () => { await api(`/v1/approvals/${button.dataset.approval}/${button.dataset.action}`, { method: "POST", body: "{}" }); approvals(); }); } catch (error) { document.querySelector("#approval-list")!.innerHTML = `<div class="error">${esc((error as Error).message)}</div>`; } }
 async function knowledge() { shell(`<section class="panel-page"><div class="intro">Private sources Kim can search across conversations and tasks.</div><div id="knowledge-list" class="list"><div class="loading"><span class="spinner"></span> Loading sources…</div></div></section>`); try { const data = await api("/v1/knowledge/sources"); const items = data.sources || data || []; document.querySelector("#knowledge-list")!.innerHTML = items.length ? items.map((item: any) => `<article class="list-card"><div><strong>${esc(item.title || item.name || "Source")}</strong><p>${esc(item.path || item.url || item.kind || "Knowledge source")}</p></div><span class="tag">${esc(item.kind || "indexed")}</span></article>`).join("") : `<div class="empty"><p>No sources indexed yet.</p><small>Ask Kim to remember a file or URL to begin.</small></div>`; } catch (error) { document.querySelector("#knowledge-list")!.innerHTML = `<div class="error">${esc((error as Error).message)}</div>`; } }
 function settings() { const base = prompt("Kim server URL", state.base); if (base === null) return; const pin = prompt("Kim PIN", state.pin); if (pin === null) return; state.base = base.replace(/\/$/, ""); state.pin = pin; localStorage.setItem("kim.server", state.base); localStorage.setItem("kim.pin", state.pin); render(); }
+
+async function updateConnection() {
+  const label = document.querySelector<HTMLElement>("#connection-label");
+  const dot = document.querySelector<HTMLElement>("#connection-dot");
+  if (!label || !dot) return;
+  try {
+    const data = await api("/v1/device/status");
+    const laptop = data.devices?.laptop;
+    const online = laptop && (Date.now() / 1000 - Number(laptop.last_seen || 0)) < 15;
+    label.textContent = online ? "Laptop relay connected" : "Laptop relay offline";
+    dot.style.background = online ? "#63e6a1" : "#e06b75";
+  } catch {
+    label.textContent = "Relay status unavailable";
+    dot.style.background = "#e06b75";
+  }
+}
+
+window.setInterval(updateConnection, 10_000);
 
 syncInitialWindowMode();
