@@ -204,9 +204,9 @@ class MainActivity : ComponentActivity() {
                 DropdownMenuItem(text = { Text("Connect to desktop") }, onClick = {
                     actionMenu = false
                     executor.execute {
-                        val result = runCatching { KimClient(baseUrl, pin, activeUser).connectDesktop(KimPrefs.deviceId(context)) }
+                        val result = runCatching { KimClient(baseUrl, pin, activeUser).connectDesktop() }
                             .getOrElse { "500: ${it.message ?: "connection failed"}" }
-                        runOnUiThread { messages.add(ChatMessage(false, if (result.startsWith("2")) "Desktop connection is ready. Kim can use the connected desktop when you ask." else "Desktop connection failed: ${result.substringAfter(": ")}")) }
+                        runOnUiThread { messages.add(ChatMessage(false, if (result.startsWith("200:")) { val body = result.substringAfter(": "); if (body.contains("\"connected\":true")) "Desktop connection is ready. Kim can use the connected desktop when you ask." else "Desktop relay is offline. Start Kim on the laptop first." } else "Desktop connection failed: ${result.substringAfter(": ")}")) }
                     }
                     context.startForegroundService(Intent(context, KimForegroundService::class.java))
                 })

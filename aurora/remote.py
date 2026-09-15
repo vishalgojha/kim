@@ -23,6 +23,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 from .agent import AgentCore
 from .eleven_chat import ElevenTextChat
+from .tools.context import get_ctx
 from .tools.registry import ToolRegistry
 
 log = logging.getLogger("aurora.remote")
@@ -67,12 +68,14 @@ class RemoteServer:
         self.commands: list[Dict[str, Any]] = []
         self.device_commands: list[Dict[str, Any]] = []
         self.devices: Dict[str, Dict[str, Any]] = {}
+        self.device_waiters: Dict[str, asyncio.Future[str]] = {}
         self.google_states: Dict[str, float] = {}
         self.agent = AgentCore(registry)
         self.research_jobs: Dict[str, Dict[str, Any]] = {}
         self.research_lock = threading.Lock()
         self.commands_lock = threading.Lock()
         self._load_state()
+        get_ctx()["queue_device_command"] = self.queue_device_command
         self.server: Optional[ThreadingHTTPServer] = None
         self.thread: Optional[threading.Thread] = None
 
@@ -302,15 +305,15 @@ class RemoteServer:
                         self._reply(200, {"ok": True, "device_id": device_id})
                         return
                     if self.path == "/v1/device/connect":
-                        device_id = str(data.get("device_id", "")).strip()
+                        device_id = str(data.get("device_id", "laptop")).strip() or "laptop"
                         if not device_id or len(device_id) > 100:
                             raise ValueError("device_id is required")
                         capabilities = data.get("capabilities", [])
                         with owner.commands_lock:
-                            owner.devices[device_id] = {"device_id": device_id, "last_seen": time.time(), "capabilities": capabilities, "connected": True}
-                            owner._persist_state()
-                        owner._audit("device_connected", {"device_id": device_id, "capabilities": capabilities}, True)
-                        self._reply(200, {"ok": True, "device_id": device_id, "connected": True})
+                            desktop = owner.devices.get(device_id, {})
+                            online = bool(desktop and time.time() - float(desktop.get("last_seen", 0)) < 15)
+                        owner._audit("device_connect_requested", {"device_id": device_id, "capabilities": capabilities}, online)
+                        self._reply(200, {"ok": True, "device_id": device_id, "connected": online, "message": "desktop relay is online" if online else "start the Kim desktop relay first"})
                         return
                     if self.path == "/v1/device/command":
                         action = str(data.get("action", "")).strip().lower()
@@ -320,16 +323,18 @@ class RemoteServer:
                         }
                         if action not in allowed:
                             raise ValueError(f"action must be one of {sorted(allowed)}")
-                        command = {"id": uuid.uuid4().hex, "type": "device", "device_id": str(data.get("device_id", "")).strip() or None, "action": action, "parameters": data.get("parameters", {}), "created_at": time.time()}
-                        with owner.commands_lock:
-                            owner.device_commands.append(command)
-                            owner._persist_state()
-                        owner._audit("device_command_queued", {"id": command["id"], "action": action, "device_id": command["device_id"]}, True)
-                        self._reply(202, {"ok": True, "command_id": command["id"]})
+                        target = str(data.get("device_id", "")).strip() or "laptop"
+                        result = owner._run(owner.queue_device_command(action, target, data.get("parameters", {})))
+                        self._reply(200, {"ok": True, "result": result})
                         return
                     if self.path.startswith("/v1/device/commands/") and self.path.endswith("/result"):
                         command_id = self.path.removeprefix("/v1/device/commands/").removesuffix("/result").strip("/")
-                        owner._audit("device_command_result", {"id": command_id, "action": str(data.get("action", ""))[:80]}, not bool(data.get("is_error")))
+                        result = str(data.get("result", ""))[:20_000]
+                        failed = bool(data.get("is_error"))
+                        waiter = owner.device_waiters.pop(command_id, None)
+                        if waiter is not None and not waiter.done():
+                            owner.loop.call_soon_threadsafe(waiter.set_result, (f"device error: {result}" if failed else result))
+                        owner._audit("device_command_result", {"id": command_id, "action": str(data.get("action", ""))[:80]}, not failed)
                         self._reply(200, {"ok": True})
                         return
                     if self.path == "/v1/say":
@@ -469,6 +474,28 @@ class RemoteServer:
         self.thread = threading.Thread(target=self.server.serve_forever, name="kim-remote", daemon=True)
         self.thread.start()
         log.info("remote API listening on %s:%s", self.host, self.port)
+
+    async def queue_device_command(self, action: str, device_id: str, parameters: Dict[str, Any]) -> str:
+        allowed = {"open_url", "open_app", "type_text", "press_key", "screenshot", "playwright_run"}
+        if action not in allowed:
+            return f"unsupported device action: {action}"
+        with self.commands_lock:
+            device = self.devices.get(device_id, {})
+            online = bool(device and time.time() - float(device.get("last_seen", 0)) < 15)
+            if not online:
+                return f"device {device_id} is offline; no action was executed"
+            command_id = uuid.uuid4().hex
+            command = {"id": command_id, "type": "device", "device_id": device_id, "action": action, "parameters": parameters, "created_at": time.time()}
+            self.device_commands.append(command)
+            self._persist_state()
+        waiter: asyncio.Future[str] = self.loop.create_future()
+        self.device_waiters[command_id] = waiter
+        self._audit("device_command_queued", {"id": command_id, "action": action, "device_id": device_id}, True)
+        try:
+            return await asyncio.wait_for(waiter, timeout=30)
+        except asyncio.TimeoutError:
+            self.device_waiters.pop(command_id, None)
+            return f"device {device_id} did not report a result within 30 seconds; action may not have executed"
 
     def _check(self, handler: BaseHTTPRequestHandler) -> bool:
         # Let the trusted native desktop path authenticate first; it is intentionally

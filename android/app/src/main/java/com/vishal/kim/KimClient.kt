@@ -15,8 +15,8 @@ class KimClient(private val baseUrl: String, private val token: String, private 
         if (!attachmentName.isNullOrBlank() && !attachmentText.isNullOrBlank()) body.put("attachments", org.json.JSONArray().put(JSONObject().put("name", attachmentName).put("text", attachmentText)))
         return request("POST", "/v1/chat", body.toString())
     }
-    fun connectDesktop(deviceId: String): String = request(
-        "POST", "/v1/device/connect", JSONObject().put("device_id", deviceId).put("capabilities", listOf("open_url", "open_app", "notify", "media", "volume", "flashlight")).toString()
+    fun connectDesktop(): String = request(
+        "POST", "/v1/device/connect", JSONObject().put("device_id", "laptop").put("capabilities", listOf("open_url", "open_app", "type_text", "press_key", "screenshot", "playwright_run")).toString()
     )
     fun control(action: String): String = request("POST", "/v1/control", "{\"action\":\"$action\"}")
     fun approve(id: String): String = request("POST", "/v1/approvals/$id/approve", "{}")
