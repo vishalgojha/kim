@@ -677,28 +677,41 @@ class RemoteServer:
 
         verifier = secrets.token_urlsafe(48)
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
-        state = secrets.token_urlsafe(32)
-        self.propai_oauth[state] = {"verifier": verifier, "created_at": time.time()}
-        self._persist_state()
+        # Keep the OAuth transaction restart-safe. Coolify may replace the
+        # container while the user is signing in, so do not depend on process
+        # memory or a non-persistent filesystem for PKCE state.
+        state_payload = json.dumps({"v": verifier, "c": client_id, "t": int(time.time())}, separators=(",", ":")).encode()
+        state = base64.urlsafe_b64encode(state_payload).rstrip(b"=").decode()
         return "https://mcp.propai.live/authorize?" + urlencode({
             "response_type": "code", "client_id": client_id, "redirect_uri": redirect_uri,
             "state": state, "code_challenge": challenge, "code_challenge_method": "S256",
         })
 
     def _consume_propai_state(self, state: str) -> bool:
-        record = self.propai_oauth.get(state)
-        return bool(record and time.time() - float(record.get("created_at", 0)) < 600)
+        import base64
+        try:
+            padded = state + "=" * (-len(state) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(padded.encode()).decode())
+            return bool(payload.get("v") and payload.get("c") and time.time() - float(payload.get("t", 0)) < 900)
+        except (ValueError, TypeError, json.JSONDecodeError):
+            return False
 
     def _finish_propai_auth(self, code: str, state: str) -> None:
+        import base64
         import httpx
 
-        record = self.propai_oauth.get(state) or {}
-        verifier = str(record.get("verifier", ""))
-        if not verifier:
+        try:
+            padded = state + "=" * (-len(state) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(padded.encode()).decode())
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            raise ValueError("PropAI OAuth state is invalid") from exc
+        verifier = str(payload.get("v", ""))
+        client_id = str(payload.get("c", ""))
+        if not verifier or not client_id:
             raise ValueError("PropAI OAuth verifier is missing or expired")
         response = httpx.post("https://mcp.propai.live/oauth/token", data={
             "grant_type": "authorization_code", "code": code,
-            "client_id": self.propai_oauth.get("client_id", ""),
+            "client_id": client_id,
             "redirect_uri": self._propai_redirect_uri(), "code_verifier": verifier,
         }, timeout=15)
         if response.status_code >= 400:
