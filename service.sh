@@ -36,7 +36,12 @@ case "${1:-}" in
     systemctl --user disable aurora-mic >/dev/null 2>&1 || true
     systemctl --user enable "$WA_SVC"
     systemctl --user enable "$SVC"
-    echo "installed. start with: $0 start"
+    # Keep the local bridge available after login/reboot. Linger is best-effort:
+    # some distributions require an administrator to enable it globally.
+    loginctl enable-linger "$USER" >/dev/null 2>&1 || true
+    systemctl --user start "$WA_SVC"
+    systemctl --user start "$SVC"
+    echo "installed and started. Kim will start automatically on future logins."
     ;;
   start)
     systemctl --user start "$WA_SVC"
