@@ -10,6 +10,7 @@ class KimClient(private val baseUrl: String, private val token: String, private 
     fun getIntegrations(): String = request("GET", "/v1/integrations")
     fun getApprovals(): String = request("GET", "/v1/approvals")
     fun getVoiceSession(): String = request("GET", "/v1/voice/session")
+    fun musicStatus(jobId: String): String = request("GET", "/v1/music/${java.net.URLEncoder.encode(jobId, "UTF-8")}")
     fun chat(message: String, conversationId: String, deviceContext: String = "Android phone", attachmentName: String? = null, attachmentText: String? = null): String {
         val body = JSONObject().put("message", message).put("conversation_id", conversationId).put("client", "android").put("device_context", deviceContext)
         if (!attachmentName.isNullOrBlank() && !attachmentText.isNullOrBlank()) body.put("attachments", org.json.JSONArray().put(JSONObject().put("name", attachmentName).put("text", attachmentText)))

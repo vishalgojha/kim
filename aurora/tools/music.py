@@ -14,6 +14,15 @@ MUSIC_DIR = Path.home() / ".aurora" / "music"
 _jobs: dict[str, dict[str, Any]] = {}
 
 
+def get_music_job(job_id: str) -> dict[str, Any] | None:
+    job = _jobs.get(job_id.strip())
+    if not job:
+        return None
+    result = dict(job)
+    result.pop("prompt", None)
+    return result
+
+
 @tool(
     "make_song",
     "Generate a song with vocals or an instrumental using Eleven Music, save it locally, and optionally play it. "
@@ -76,7 +85,7 @@ async def _generate(job_id: str, cfg: dict[str, Any], prompt: str, duration: int
     timeout=10,
 )
 def music_status(job_id: str) -> str:
-    job = _jobs.get(job_id.strip())
+    job = get_music_job(job_id)
     if not job:
         return f"unknown music job: {job_id}"
     return str(job)

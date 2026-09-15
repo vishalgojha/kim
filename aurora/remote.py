@@ -24,6 +24,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 from .agent import AgentCore
 from .eleven_chat import ElevenTextChat
 from .tools.context import get_ctx
+from .tools.music import get_music_job
 from .tools.registry import ToolRegistry
 
 log = logging.getLogger("aurora.remote")
@@ -120,7 +121,7 @@ class RemoteServer:
 
             def _json(self) -> Dict[str, Any]:
                 size = int(self.headers.get("Content-Length", "0"))
-                if size > 256_000:
+                if size > 2_500_000:
                     raise ValueError("request too large")
                 return json.loads(self.rfile.read(size) or b"{}")
 
@@ -180,6 +181,31 @@ class RemoteServer:
                         state = "offline"
                     self._reply(200, {"ok": True, "voice_state": state, "agent": owner.agent.status(), "allowed_tools": sorted(owner.allowed_tools), "direct_tools": sorted(owner.direct_tools)})
                     return
+                if self.path.startswith("/v1/music/"):
+                    job_id = self.path.removeprefix("/v1/music/").strip("/")
+                    if job_id.endswith("/download"):
+                        job_id = job_id.removesuffix("/download").strip("/")
+                        job = get_music_job(job_id)
+                        path = Path(str((job or {}).get("path", ""))) if job else None
+                        if not job or job.get("status") != "completed" or not path or not path.is_file():
+                            self._reply(404, {"error": "music is not ready"})
+                            return
+                        body = path.read_bytes()
+                        self.send_response(200)
+                        self.send_header("Content-Type", "audio/mpeg")
+                        self.send_header("Content-Length", str(len(body)))
+                        self.send_header("Content-Disposition", f'attachment; filename="{path.name}"')
+                        self.end_headers()
+                        self.wfile.write(body)
+                        return
+                    job = get_music_job(job_id)
+                    if not job:
+                        self._reply(404, {"error": "unknown music job"})
+                        return
+                    payload = {"ok": True, "job": job}
+                    if job.get("status") == "completed": payload["download_url"] = f"/v1/music/{job_id}/download"
+                    self._reply(200, payload)
+                    return
                 if self.path == "/v1/knowledge/sources":
                     result, is_error = owner._run(owner.registry.run("knowledge_sources", {}))
                     self._reply(500 if is_error else 200, {"ok": not is_error, "sources": result})
@@ -198,11 +224,13 @@ class RemoteServer:
                 if self.path == "/v1/integrations":
                     google_ready = bool(os.environ.get("NANGO_SECRET_KEY", "").strip() and os.environ.get("NANGO_GMAIL_INTEGRATION_ID", "").strip() and os.environ.get("NANGO_GMAIL_CONNECTION_ID", "").strip()) or bool(os.environ.get("GOOGLE_TOKEN_JSON", "").strip()) or Path(os.environ.get("GOOGLE_TOKEN_PATH", "~/.aurora/google-token.json")).expanduser().exists()
                     whatsapp_ready = bool(os.environ.get("WHATSAPP_CLOUD_API_TOKEN", "").strip() and os.environ.get("WHATSAPP_CLOUD_PHONE_NUMBER_ID", "").strip())
+                    propai_ready = bool(os.environ.get("PROPAI_MCP_TOKEN", "").strip())
                     self._reply(200, {"ok": True, "integrations": {
                         "gmail": {"cloud": google_ready, "laptop_fallback": True},
                         "calendar": {"cloud": google_ready, "laptop_fallback": True},
                         "whatsapp": {"cloud": whatsapp_ready, "laptop_fallback": True},
                         "laptop_control": {"cloud": False, "laptop_fallback": True},
+                        "propai_mcp": {"connected": propai_ready, "auth": "Supabase-authenticated MCP token required", "endpoint": os.environ.get("PROPAI_MCP_URL", "https://mcp.propai.live/mcp")},
                         "banking": {"enabled": False},
                     }})
                     return

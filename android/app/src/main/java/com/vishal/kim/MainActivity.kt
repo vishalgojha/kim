@@ -3,6 +3,8 @@ package com.vishal.kim
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.app.DownloadManager
+import android.net.Uri
 import android.provider.Settings
 import android.os.Bundle
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -82,7 +84,7 @@ private val KimPanel = Color(0xFF15171C)
 private val KimBorder = Color(0xFF2A2E36)
 private val KimMuted = Color(0xFF9299A8)
 
-private data class ChatMessage(val user: Boolean, val text: String)
+private data class ChatMessage(val user: Boolean, val text: String, val attachmentName: String? = null, val musicJobId: String? = null)
 
 class MainActivity : ComponentActivity() {
     private val baseUrl = "https://app.vishalojha.me"
@@ -140,7 +142,8 @@ class MainActivity : ComponentActivity() {
             if (text.isBlank() || thinking) return
             if (pin.isBlank()) { signIn = true; return }
             input = ""
-            messages.add(ChatMessage(true, text))
+            val selectedAttachment = attachmentName
+            messages.add(ChatMessage(true, text, selectedAttachment))
             KimPrefs.appendMessage(context, activeUser, conversationId, true, text)
             historyRefresh++
             thinking = true
@@ -152,7 +155,9 @@ class MainActivity : ComponentActivity() {
                     val json = JSONObject(body)
                     json.optString("message").ifBlank { json.optString("error").ifBlank { body } }
                 }.getOrDefault(body)
-                runOnUiThread { messages.add(ChatMessage(false, reply)); KimPrefs.appendMessage(context, activeUser, conversationId, false, reply); historyRefresh++; attachmentName = null; attachmentText = null; thinking = false }
+                val musicJob = Regex("music-[a-f0-9]{8}").find(reply)?.value
+                runOnUiThread { messages.add(ChatMessage(false, reply, musicJobId = musicJob)); KimPrefs.appendMessage(context, activeUser, conversationId, false, reply); historyRefresh++; attachmentName = null; attachmentText = null; thinking = false }
+                if (musicJob != null) watchMusic(musicJob, context, pin, activeUser, messages, conversationId) { historyRefresh++ }
             }
         }
 
@@ -196,7 +201,7 @@ class MainActivity : ComponentActivity() {
                 Column(Modifier.fillMaxSize().padding(padding).navigationBarsPadding()) {
                     LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp), contentPadding = PaddingValues(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                         if (messages.isEmpty()) item { Welcome() }
-                        items(messages) { message -> MessageBubble(message) }
+                        items(messages) { message -> MessageBubble(message) { downloadMusic(context, pin, activeUser, it) } }
                         if (thinking) item { MessageBubble(ChatMessage(false, "Kim is thinking…")) }
                     }
                     if (attachmentName != null) Text("Attached: $attachmentName", color = KimMuted, modifier = Modifier.padding(horizontal = 22.dp, vertical = 4.dp))
@@ -237,6 +242,33 @@ class MainActivity : ComponentActivity() {
             if (result.isSuccess && result.getOrThrow().startsWith("200:")) { KimPrefs.savePin(this, user, clean); KimPrefs.setActiveUser(this, user) }
         }
     }
+
+    private fun watchMusic(jobId: String, context: android.content.Context, token: String, user: String, messages: MutableList<ChatMessage>, conversationId: String, onUpdated: () -> Unit) {
+        executor.execute {
+            repeat(60) {
+                Thread.sleep(3000)
+                val raw = runCatching { KimClient(baseUrl, token, user).musicStatus(jobId) }.getOrNull() ?: return@repeat
+                val body = raw.substringAfter(": ", raw)
+                val status = runCatching { JSONObject(body).optJSONObject("job")?.optString("status") ?: "" }.getOrDefault("")
+                if (status == "completed" || status == "failed") {
+                    val text = if (status == "completed") "Your music is ready. Tap Download generated music below." else "Music generation failed: ${runCatching { JSONObject(body).optJSONObject("job")?.optString("error") }.getOrNull() ?: "unknown error"}"
+                    runOnUiThread { messages.add(ChatMessage(false, text, musicJobId = if (status == "completed") jobId else null)); KimPrefs.appendMessage(context, user, conversationId, false, text); onUpdated() }
+                    return@execute
+                }
+            }
+        }
+    }
+
+    private fun downloadMusic(context: android.content.Context, token: String, user: String, jobId: String) {
+        val request = DownloadManager.Request(Uri.parse("$baseUrl/v1/music/$jobId/download"))
+            .setTitle("Kim music")
+            .setDescription("Downloading generated music")
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setDestinationInExternalFilesDir(context, android.os.Environment.DIRECTORY_MUSIC, "$jobId.mp3")
+            .addRequestHeader("X-Kim-Pin", token)
+            .addRequestHeader("X-Kim-User", user)
+        context.getSystemService(DownloadManager::class.java).enqueue(request)
+    }
 }
 
 @Composable
@@ -251,9 +283,13 @@ private fun Welcome() {
 }
 
 @Composable
-private fun MessageBubble(message: ChatMessage) {
+private fun MessageBubble(message: ChatMessage, onDownload: (String) -> Unit = {}) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.user) Arrangement.End else Arrangement.Start) {
-        Text(message.text, color = if (message.user) Color(0xFF17191D) else Color(0xFFE5E7EB), fontSize = 16.sp, modifier = Modifier.background(if (message.user) Color(0xFFE7E9ED) else KimPanel, RoundedCornerShape(20.dp)).padding(horizontal = 16.dp, vertical = 12.dp))
+        Column(horizontalAlignment = if (message.user) Alignment.End else Alignment.Start) {
+            Text(message.text, color = if (message.user) Color(0xFF17191D) else Color(0xFFE5E7EB), fontSize = 16.sp, modifier = Modifier.background(if (message.user) Color(0xFFE7E9ED) else KimPanel, RoundedCornerShape(20.dp)).padding(horizontal = 16.dp, vertical = 12.dp))
+            if (message.attachmentName != null) Text("Attached: ${message.attachmentName}", color = KimMuted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 3.dp))
+            if (message.musicJobId != null) Button(onClick = { onDownload(message.musicJobId) }, modifier = Modifier.padding(top = 6.dp)) { Text("Download generated music") }
+        }
     }
 }
 
