@@ -53,7 +53,7 @@ def _jsonrpc(response: httpx.Response) -> dict[str, Any]:
 def call_mcp(name: str, arguments: dict[str, Any]) -> str:
     token = _token()
     if not token:
-        return "PropAI MCP is not connected. Configure PROPAI_MCP_TOKEN for Kim's scoped PropAI account."
+        return "PropAI MCP is not connected. Authenticate the PropAI MCP connector with the Supabase account at https://mcp.propai.live, then configure the resulting scoped access token as PROPAI_MCP_TOKEN. Kim will use the default MCP endpoint: https://mcp.propai.live/mcp"
     if name not in _KNOWN_TOOLS:
         return f"PropAI MCP tool is not allowed: {name}"
     headers = {

@@ -1,5 +1,5 @@
 [Unit]
-Description=Kim local assistant API (chat only)
+Description=Kim laptop desktop relay (microphone disabled)
 After=sound.target
 
 [Service]
@@ -8,7 +8,7 @@ WorkingDirectory=/home/vishal/aurora
 EnvironmentFile=/home/vishal/aurora/.env
 Environment=KIM_REMOTE_HOST=127.0.0.1
 Environment=KIM_PORT=8765
-ExecStart=/home/vishal/aurora/.venv/bin/python -m aurora serve
+ExecStart=/home/vishal/aurora/.venv/bin/python -m aurora desktop
 Restart=on-failure
 RestartSec=3
 

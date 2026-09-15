@@ -291,6 +291,13 @@ async def run_remote(cfg: Dict[str, Any]) -> None:
             eleven.close()
 
 
+async def run_desktop(cfg: Dict[str, Any]) -> None:
+    """Run only the laptop command relay; never opens the microphone."""
+    _build_context(cfg)
+    log.info("desktop relay starting (microphone disabled)")
+    await _desktop_device_command_loop(cfg)
+
+
 async def run_selftest(cfg: Dict[str, Any]) -> int:
     eleven = ElevenAPI(cfg)
     print(f"region: {cfg['elevenlabs'].get('region') or 'production'} @ {eleven.base_url}")
@@ -342,7 +349,7 @@ def run_wake() -> int:
 
 def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(prog="kim", description="Kim: an ElevenLabs-voiced agentic laptop assistant")
-    ap.add_argument("mode", nargs="?", default="voice", choices=["voice", "watch", "serve", "setup", "test", "say", "wake", "install"])
+    ap.add_argument("mode", nargs="?", default="voice", choices=["voice", "watch", "serve", "desktop", "setup", "test", "say", "wake", "install"])
     ap.add_argument("text", nargs="*", help="for 'say': the words to speak aloud")
     ap.add_argument("--config", default=None, help="path to config.yaml")
     ap.add_argument("--reset-agent", action="store_true", help="force-recreate the ElevenLabs agent")
@@ -366,6 +373,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         except ElevenError as e:
             print(f"failed: {e}")
             return 1
+        return 0
+
+    if args.mode == "desktop":
+        try:
+            asyncio.run(run_desktop(cfg))
+        except KeyboardInterrupt:
+            pass
         return 0
 
     if args.mode == "setup":
