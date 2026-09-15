@@ -143,7 +143,9 @@ async function connectPropAI() {
       localStorage.setItem("kim.server", DEFAULT_SERVER);
       data = await api("/v1/propai/start");
     }
-    window.open(data.auth_url, "_blank");
+    // Tauri's WebView can silently block window.open. Navigating explicitly
+    // guarantees the PropAI OAuth page is opened after the button click.
+    window.location.href = data.auth_url;
   } catch (error) {
     alert(`PropAI connection could not start: ${(error as Error).message}`);
   }
