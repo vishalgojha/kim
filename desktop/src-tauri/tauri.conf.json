@@ -30,7 +30,7 @@
   "bundle": {
     "active": true,
     "targets": ["deb"],
-    "icon": ["icons/kim-orb.svg"],
+    "icon": ["icons/kim-desktop.svg"],
     "category": "Utility",
     "shortDescription": "Kim personal agent"
   }
