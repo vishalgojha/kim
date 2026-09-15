@@ -154,13 +154,11 @@ class ElevenTextChat:
                 text = self._part_text(msg)
                 if text:
                     chunks.append(text)
-                    if mtype in {"agent_response", "agent_response_correction"}:
-                        return {"ok": True, "message": "".join(chunks).strip(), "tools_used": tools_used}
                     continue
 
                 if mtype == "agent_response_complete":
                     answer = "".join(chunks).strip()
-                    return {"ok": True, "message": answer or "I'm ready.", "tools_used": tools_used}
+                    return {"ok": True, "message": answer or "I'm ready.", "tools_used": tools_used, "tool_results_completed": bool(tools_used)}
 
                 if mtype == "client_error":
                     raise RuntimeError(f"ElevenLabs chat failed: {msg.get('client_error', msg)}")
