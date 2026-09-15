@@ -8,6 +8,7 @@ import java.net.URLEncoder
 class KimClient(private val baseUrl: String, private val token: String, private val user: String = "") {
     fun getStatus(): String = request("GET", "/v1/status")
     fun getIntegrations(): String = request("GET", "/v1/integrations")
+    fun propaiStart(): String = request("GET", "/v1/propai/start")
     fun getApprovals(): String = request("GET", "/v1/approvals")
     fun getVoiceSession(): String = request("GET", "/v1/voice/session")
     fun musicStatus(jobId: String): String = request("GET", "/v1/music/${java.net.URLEncoder.encode(jobId, "UTF-8")}")

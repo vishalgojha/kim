@@ -174,9 +174,7 @@ class MainActivity : ComponentActivity() {
                     chatHistory.take(8).forEach { chat ->
                         NavigationDrawerItem(label = { Text(chat.title.ifBlank { "New chat" }, maxLines = 1) }, selected = chat.id == conversationId, onClick = { conversationId = chat.id; KimPrefs.setCurrentChat(context, activeUser, chat.id); scope.launch { drawer.close() } }, modifier = Modifier.padding(horizontal = 12.dp))
                     }
-                    NavigationDrawerItem(label = { Text("Research") }, selected = false, onClick = { scope.launch { drawer.close() } }, modifier = Modifier.padding(horizontal = 12.dp))
                     NavigationDrawerItem(label = { Text("Approvals") }, selected = false, onClick = { actionMenu = true; scope.launch { drawer.close() } }, modifier = Modifier.padding(horizontal = 12.dp))
-                    NavigationDrawerItem(label = { Text("Knowledge") }, selected = false, onClick = { scope.launch { drawer.close() } }, modifier = Modifier.padding(horizontal = 12.dp))
                     Spacer(Modifier.weight(1f))
                     NavigationDrawerItem(label = { Text("Settings") }, selected = false, icon = { Icon(Icons.Default.Settings, null) }, onClick = { signIn = true; scope.launch { drawer.close() } }, modifier = Modifier.padding(12.dp))
                 }
@@ -222,6 +220,17 @@ class MainActivity : ComponentActivity() {
                 DropdownMenuItem(text = { Text("Show my calendar") }, onClick = { input = "Show my calendar"; actionMenu = false })
                 DropdownMenuItem(text = { Text("Review requests") }, onClick = { input = "Review my requests"; actionMenu = false })
                 DropdownMenuItem(text = { Text("Attach a file") }, onClick = { filePicker.launch(arrayOf("*/*")); actionMenu = false })
+                DropdownMenuItem(text = { Text("Connect PropAI") }, onClick = {
+                    actionMenu = false
+                    executor.execute {
+                        val raw = runCatching { KimClient(baseUrl, pin, activeUser).propaiStart() }.getOrElse { "500: ${it.message ?: "connection failed"}" }
+                        val url = runCatching { JSONObject(raw.substringAfter(": ", raw)).optString("auth_url") }.getOrNull().orEmpty()
+                        runOnUiThread {
+                            if (url.isNotBlank()) context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                            else messages.add(ChatMessage(false, "PropAI connection could not start: ${raw.substringAfter(": ")}"))
+                        }
+                    }
+                })
                 DropdownMenuItem(text = { Text("Connect to desktop") }, onClick = {
                     actionMenu = false
                     executor.execute {

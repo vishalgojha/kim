@@ -64,6 +64,7 @@ class RemoteServer:
         self.text_chat = text_chat
         self.audit_path = Path(os.environ.get("KIM_REMOTE_AUDIT_PATH", str(remote.get("audit_path", "~/.aurora/remote-audit.jsonl")))).expanduser()
         self.state_path = Path(os.environ.get("KIM_REMOTE_STATE_PATH", str(remote.get("state_path", "~/.aurora/remote-state.json")))).expanduser()
+        self.remote_domain = str(remote.get("domain", "")).strip().rstrip("/")
         self.approvals: Dict[str, Dict[str, Any]] = {}
         self.approvals_lock = threading.Lock()
         self.commands: list[Dict[str, Any]] = []
@@ -71,6 +72,7 @@ class RemoteServer:
         self.devices: Dict[str, Dict[str, Any]] = {}
         self.device_waiters: Dict[str, asyncio.Future[str]] = {}
         self.google_states: Dict[str, float] = {}
+        self.propai_oauth: Dict[str, Any] = {}
         self.agent = AgentCore(registry)
         self.research_jobs: Dict[str, Dict[str, Any]] = {}
         self.research_lock = threading.Lock()
@@ -144,6 +146,9 @@ class RemoteServer:
                     return
                 if self.path.startswith("/v1/google/callback"):
                     self._google_callback()
+                    return
+                if self.path.startswith("/v1/propai/callback"):
+                    self._propai_callback()
                     return
                 if not owner._check(self):
                     return
@@ -224,7 +229,7 @@ class RemoteServer:
                 if self.path == "/v1/integrations":
                     google_ready = bool(os.environ.get("NANGO_SECRET_KEY", "").strip() and os.environ.get("NANGO_GMAIL_INTEGRATION_ID", "").strip() and os.environ.get("NANGO_GMAIL_CONNECTION_ID", "").strip()) or bool(os.environ.get("GOOGLE_TOKEN_JSON", "").strip()) or Path(os.environ.get("GOOGLE_TOKEN_PATH", "~/.aurora/google-token.json")).expanduser().exists()
                     whatsapp_ready = bool(os.environ.get("WHATSAPP_CLOUD_API_TOKEN", "").strip() and os.environ.get("WHATSAPP_CLOUD_PHONE_NUMBER_ID", "").strip())
-                    propai_ready = bool(os.environ.get("PROPAI_MCP_TOKEN", "").strip())
+                    propai_ready = bool(os.environ.get("PROPAI_MCP_TOKEN", "").strip()) or owner._propai_token_path().exists()
                     self._reply(200, {"ok": True, "integrations": {
                         "gmail": {"cloud": google_ready, "laptop_fallback": True},
                         "calendar": {"cloud": google_ready, "laptop_fallback": True},
@@ -233,6 +238,12 @@ class RemoteServer:
                         "propai_mcp": {"connected": propai_ready, "auth": "Supabase-authenticated MCP token required", "endpoint": os.environ.get("PROPAI_MCP_URL", "https://mcp.propai.live/mcp")},
                         "banking": {"enabled": False},
                     }})
+                    return
+                if self.path == "/v1/propai/start":
+                    try:
+                        self._reply(200, {"ok": True, "auth_url": owner._propai_auth_url()})
+                    except ValueError as exc:
+                        self._reply(400, {"error": str(exc)})
                     return
                 if self.path == "/v1/google/start":
                     try:
@@ -305,6 +316,28 @@ class RemoteServer:
                 self.send_response(302)
                 self.send_header("Location", "/?google=connected")
                 self.end_headers()
+
+            def _propai_callback(self) -> None:
+                query = parse_qs(urlparse(self.path).query)
+                state = str((query.get("state") or [""])[0])
+                code = str((query.get("code") or [""])[0])
+                if not owner._consume_propai_state(state):
+                    self._reply(400, {"error": "invalid or expired PropAI OAuth state"})
+                    return
+                if not code:
+                    self._reply(400, {"error": "PropAI authorization was not completed"})
+                    return
+                try:
+                    owner._finish_propai_auth(code, state)
+                except ValueError as exc:
+                    self._reply(400, {"error": str(exc)})
+                    return
+                body = b"<html><body style='font-family:sans-serif;background:#08090b;color:white;padding:48px'><h2>PropAI connected</h2><p>You can close this tab and return to Kim.</p></body></html>"
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
 
             def do_POST(self) -> None:  # noqa: N802
                 if not owner._check(self):
@@ -566,6 +599,10 @@ class RemoteServer:
             states = state.get("google_states", {})
             if isinstance(states, dict):
                 self.google_states = {str(k): float(v) for k, v in states.items() if time.time() - float(v) < 600}
+            propai_oauth = state.get("propai_oauth", {})
+            if isinstance(propai_oauth, dict):
+                self.propai_oauth = {"client_id": str(propai_oauth.get("client_id", ""))}
+                self.propai_oauth.update({str(k): v for k, v in propai_oauth.items() if k != "client_id" and isinstance(v, dict) and time.time() - float(v.get("created_at", 0)) < 600})
         except (OSError, json.JSONDecodeError):
             return
 
@@ -608,6 +645,75 @@ class RemoteServer:
             created = self.google_states.pop(state, 0)
             self._persist_state()
         return bool(created and time.time() - created < 600)
+
+    def _propai_token_path(self) -> Path:
+        return Path(os.environ.get("KIM_PROPAI_TOKEN_PATH", str(self.state_path.with_name("propai-token.json")))).expanduser()
+
+    def _propai_redirect_uri(self) -> str:
+        if not self.remote_domain:
+            raise ValueError("remote.domain is required for PropAI connection")
+        return f"https://{self.remote_domain}/v1/propai/callback"
+
+    def _propai_auth_url(self) -> str:
+        import base64
+        import hashlib
+        import httpx
+
+        redirect_uri = self._propai_redirect_uri()
+        client_id = self.propai_oauth.get("client_id", "")
+        if not client_id:
+            try:
+                response = httpx.post("https://mcp.propai.live/register", json={
+                    "client_name": "Kim",
+                    "redirect_uris": [redirect_uri],
+                }, timeout=15)
+                response.raise_for_status()
+                client_id = str(response.json().get("client_id", ""))
+            except Exception as exc:  # noqa: BLE001
+                raise ValueError(f"could not register Kim with PropAI: {exc}") from exc
+            if not client_id:
+                raise ValueError("PropAI did not return an OAuth client id")
+            self.propai_oauth["client_id"] = client_id
+
+        verifier = secrets.token_urlsafe(48)
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+        state = secrets.token_urlsafe(32)
+        self.propai_oauth[state] = {"verifier": verifier, "created_at": time.time()}
+        self._persist_state()
+        return "https://mcp.propai.live/authorize?" + urlencode({
+            "response_type": "code", "client_id": client_id, "redirect_uri": redirect_uri,
+            "state": state, "code_challenge": challenge, "code_challenge_method": "S256",
+        })
+
+    def _consume_propai_state(self, state: str) -> bool:
+        record = self.propai_oauth.get(state)
+        return bool(record and time.time() - float(record.get("created_at", 0)) < 600)
+
+    def _finish_propai_auth(self, code: str, state: str) -> None:
+        import httpx
+
+        record = self.propai_oauth.get(state) or {}
+        verifier = str(record.get("verifier", ""))
+        if not verifier:
+            raise ValueError("PropAI OAuth verifier is missing or expired")
+        response = httpx.post("https://mcp.propai.live/oauth/token", data={
+            "grant_type": "authorization_code", "code": code,
+            "client_id": self.propai_oauth.get("client_id", ""),
+            "redirect_uri": self._propai_redirect_uri(), "code_verifier": verifier,
+        }, timeout=15)
+        if response.status_code >= 400:
+            raise ValueError(f"PropAI token exchange failed: {response.text[:300]}")
+        token = response.json()
+        if not token.get("access_token"):
+            raise ValueError("PropAI did not return an access token")
+        if token.get("expires_in"):
+            token["expires_at"] = time.time() + float(token["expires_in"])
+        path = self._propai_token_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(token), encoding="utf-8")
+        path.chmod(0o600)
+        self.propai_oauth.pop(state, None)
+        self._persist_state()
 
     def _finish_google_auth(self, code: str, handler: BaseHTTPRequestHandler) -> None:
         client_json = os.environ.get("GOOGLE_CREDENTIALS_JSON", "").strip()
@@ -659,7 +765,7 @@ class RemoteServer:
         try:
             self.state_path.parent.mkdir(parents=True, exist_ok=True)
             temporary = self.state_path.with_suffix(self.state_path.suffix + ".tmp")
-            temporary.write_text(json.dumps({"approvals": self.approvals, "commands": self.commands, "device_commands": self.device_commands, "devices": self.devices, "google_states": self.google_states}, ensure_ascii=False), encoding="utf-8")
+            temporary.write_text(json.dumps({"approvals": self.approvals, "commands": self.commands, "device_commands": self.device_commands, "devices": self.devices, "google_states": self.google_states, "propai_oauth": self.propai_oauth}, ensure_ascii=False), encoding="utf-8")
             os.replace(temporary, self.state_path)
             try:
                 self.state_path.chmod(0o600)
