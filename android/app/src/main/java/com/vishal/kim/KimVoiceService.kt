@@ -5,6 +5,8 @@ import android.app.*
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.*
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.NoiseSuppressor
 import android.os.IBinder
 import android.util.Base64
 import okhttp3.*
@@ -13,10 +15,15 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 class KimVoiceService : Service() {
+    companion object {
+        fun stop(context: android.content.Context) { context.stopService(Intent(context, KimVoiceService::class.java)) }
+    }
     private val client = OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).build()
     private var socket: WebSocket? = null
     private var recorder: AudioRecord? = null
     private var player: AudioTrack? = null
+    private var noiseSuppressor: NoiseSuppressor? = null
+    private var echoCanceler: AcousticEchoCanceler? = null
     private var recording = false
     private val user by lazy { KimPrefs.activeUser(this) }
     private val pin by lazy { KimPrefs.pin(this, user) }
@@ -100,9 +107,11 @@ class KimVoiceService : Service() {
     private fun startAudio() {
         val min = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (min <= 0) throw IllegalStateException("Android returned an invalid microphone buffer")
-        val localRecorder = AudioRecord(MediaRecorder.AudioSource.MIC, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, min * 2)
+        val localRecorder = AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, min * 2)
         if (localRecorder.state != AudioRecord.STATE_INITIALIZED) { localRecorder.release(); throw IllegalStateException("Microphone is unavailable or already in use") }
         val localPlayer = AudioTrack(AudioManager.STREAM_MUSIC, 16000, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT, min * 2, AudioTrack.MODE_STREAM)
+        noiseSuppressor = if (NoiseSuppressor.isAvailable()) NoiseSuppressor.create(localRecorder.audioSessionId) else null
+        echoCanceler = if (AcousticEchoCanceler.isAvailable()) AcousticEchoCanceler.create(localRecorder.audioSessionId) else null
         recorder = localRecorder; player = localPlayer
         localRecorder.startRecording()
         if (localRecorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) throw IllegalStateException("Microphone permission is granted but recording did not start")
@@ -111,13 +120,27 @@ class KimVoiceService : Service() {
             val buffer = ByteArray(min.coerceAtLeast(2048))
             while (recording) {
                 val count = recorder?.read(buffer, 0, buffer.size) ?: 0
-                if (count > 0) socket?.send("{\"user_audio_chunk\":\"${Base64.encodeToString(buffer.copyOf(count), Base64.NO_WRAP)}\"}")
+                if (count > 0) {
+                    var energy = 0L
+                    var peak = 0
+                    var index = 0
+                    while (index + 1 < count) {
+                        val raw = (buffer[index].toInt() and 0xff) or (buffer[index + 1].toInt() shl 8)
+                        val signed = if ((raw and 0x8000) != 0) raw - 0x10000 else raw
+                        val sample = kotlin.math.abs(signed)
+                        energy += sample.toLong()
+                        if (sample > peak) peak = sample
+                        index += 2
+                    }
+                    val average = if (count > 1) energy / (count / 2) else 0
+                    if (peak >= 900 && average >= 180) socket?.send("{\"user_audio_chunk\":\"${Base64.encodeToString(buffer.copyOf(count), Base64.NO_WRAP)}\"}")
+                }
             }
         }.start()
     }
 
     override fun onDestroy() {
-        recording = false; recorder?.release(); player?.release(); socket?.close(1000, "stopped"); client.dispatcher.executorService.shutdown()
+        recording = false; noiseSuppressor?.release(); echoCanceler?.release(); recorder?.release(); player?.release(); socket?.close(1000, "stopped"); client.dispatcher.executorService.shutdown()
         super.onDestroy()
     }
     override fun onBind(intent: Intent?): IBinder? = null

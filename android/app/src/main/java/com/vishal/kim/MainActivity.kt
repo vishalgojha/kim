@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -114,6 +115,7 @@ class MainActivity : ComponentActivity() {
         }
         var input by remember { mutableStateOf("") }
         var thinking by remember { mutableStateOf(false) }
+        var voiceActive by remember { mutableStateOf(false) }
         var profileMenu by remember { mutableStateOf(false) }
         var actionMenu by remember { mutableStateOf(false) }
         var signIn by remember { mutableStateOf(KimPrefs.pin(context, activeUser).isBlank()) }
@@ -205,7 +207,11 @@ class MainActivity : ComponentActivity() {
                         if (thinking) item { MessageBubble(ChatMessage(false, "Kim is thinking…")) }
                     }
                     if (attachmentName != null) Text("Attached: $attachmentName", color = KimMuted, modifier = Modifier.padding(horizontal = 22.dp, vertical = 4.dp))
-                    Composer(input, { input = it }, { send() }, { if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) context.requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 5) else context.startForegroundService(Intent(context, KimVoiceService::class.java)) }, { actionMenu = true })
+                    Composer(input, { input = it }, { send() }, {
+                        if (voiceActive) { KimVoiceService.stop(context); voiceActive = false }
+                        else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) context.requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 5)
+                        else { context.startForegroundService(Intent(context, KimVoiceService::class.java)); voiceActive = true }
+                    }, { actionMenu = true }, voiceActive)
                 }
             }
         }
@@ -294,14 +300,14 @@ private fun MessageBubble(message: ChatMessage, onDownload: (String) -> Unit = {
 }
 
 @Composable
-private fun Composer(value: String, onValue: (String) -> Unit, onSend: () -> Unit, onMic: () -> Unit, onMenu: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.Bottom) {
+private fun Composer(value: String, onValue: (String) -> Unit, onSend: () -> Unit, onMic: () -> Unit, onMenu: () -> Unit, voiceActive: Boolean = false) {
+    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
         Box {
             IconButton(onClick = onMenu, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.Add, "Actions", tint = KimMuted) }
         }
         Spacer(Modifier.width(6.dp))
         OutlinedTextField(value = value, onValueChange = onValue, modifier = Modifier.weight(1f), placeholder = { Text("Message Kim…", color = KimMuted) }, minLines = 1, maxLines = 6, shape = RoundedCornerShape(24.dp), colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = KimPanel, focusedContainerColor = KimPanel, unfocusedBorderColor = KimBorder, focusedBorderColor = Color(0xFF8B93A3), unfocusedTextColor = Color.White, focusedTextColor = Color.White))
-        IconButton(onClick = onMic, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.Mic, "Voice", tint = KimMuted) }
+        IconButton(onClick = onMic, modifier = Modifier.size(48.dp)) { Icon(if (voiceActive) Icons.Default.Stop else Icons.Default.Mic, if (voiceActive) "Stop Kim" else "Voice", tint = if (voiceActive) Color(0xFFFF7777) else KimMuted) }
         IconButton(onClick = onSend, modifier = Modifier.size(48.dp)) { Icon(Icons.AutoMirrored.Filled.Send, "Send", tint = Color.White) }
     }
 }
