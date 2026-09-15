@@ -1,7 +1,7 @@
 elevenlabs:
   api_key_env: ELEVENLABS_API_KEY
-  agent_id: agent_2701m2keetc8en6ab33httg34qa3
-  voice_id: jpICOesdLlRSc39O1UB5
+  agent_id: agent_9101m2kekhe0ehet5tsfsbvvzem1
+  voice_id: pFZP5JQG7iQjIQuC4Bku
   region: ''
   tts_model: eleven_multilingual_v2
   conversational_tts_model: eleven_multilingual_v2
