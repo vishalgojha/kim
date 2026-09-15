@@ -332,7 +332,7 @@ class RemoteServer:
                 except ValueError as exc:
                     self._reply(400, {"error": str(exc)})
                     return
-                body = b"<html><body style='font-family:sans-serif;background:#08090b;color:white;padding:48px'><h2>PropAI connected</h2><p>You can close this tab and return to Kim.</p></body></html>"
+                body = b"<html><body style='font-family:sans-serif;background:#08090b;color:white;padding:48px'><h2>PropAI connected</h2><p>Authorization complete.</p><button onclick=\"history.back()\" style='padding:12px 18px;border:0;border-radius:8px;cursor:pointer'>Return to Kim</button></body></html>"
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
