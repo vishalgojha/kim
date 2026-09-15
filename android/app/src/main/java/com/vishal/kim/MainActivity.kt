@@ -3,9 +3,12 @@ package com.vishal.kim
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.provider.Settings
 import android.os.Bundle
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -108,7 +111,24 @@ class MainActivity : ComponentActivity() {
         var actionMenu by remember { mutableStateOf(false) }
         var signIn by remember { mutableStateOf(KimPrefs.pin(context, activeUser).isBlank()) }
         var pin by remember { mutableStateOf(KimPrefs.pin(context, activeUser)) }
+        var attachmentName by remember { mutableStateOf<String?>(null) }
+        var attachmentText by remember { mutableStateOf<String?>(null) }
         val listState = rememberLazyListState()
+        val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            val name = runCatching {
+                context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0) else null
+                }
+            }.getOrNull() ?: "attachment"
+            val text = runCatching {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    stream.readBytes().take(200_000).toByteArray().toString(Charsets.UTF_8)
+                }
+            }.getOrNull().orEmpty()
+            attachmentName = name
+            attachmentText = text.ifBlank { "[Attached file: $name; text could not be extracted on this device]" }
+        }
 
         fun send() {
             val text = input.trim()
@@ -118,14 +138,14 @@ class MainActivity : ComponentActivity() {
             messages.add(ChatMessage(true, text))
             thinking = true
             executor.execute {
-                val raw = runCatching { KimClient(baseUrl, pin, activeUser).chat(text, "android-${activeUser.lowercase()}-${KimPrefs.deviceId(context)}", "Android phone for $activeUser; mobile apps, notifications, media, volume, flashlight, microphone, and phone status are available") }
+                val raw = runCatching { KimClient(baseUrl, pin, activeUser).chat(text, "android-${activeUser.lowercase()}-${KimPrefs.deviceId(context)}", "Android phone for $activeUser; mobile apps, notifications, media, volume, flashlight, microphone, and phone status are available", attachmentName, attachmentText) }
                     .getOrElse { "500: ${it.message ?: "Kim is unavailable"}" }
                 val body = raw.substringAfter(": ", raw)
                 val reply = runCatching {
                     val json = JSONObject(body)
                     json.optString("message").ifBlank { json.optString("error").ifBlank { body } }
                 }.getOrDefault(body)
-                runOnUiThread { messages.add(ChatMessage(false, reply)); thinking = false }
+                runOnUiThread { messages.add(ChatMessage(false, reply)); attachmentName = null; attachmentText = null; thinking = false }
             }
         }
 
@@ -169,6 +189,7 @@ class MainActivity : ComponentActivity() {
                         items(messages) { message -> MessageBubble(message) }
                         if (thinking) item { MessageBubble(ChatMessage(false, "Kim is thinking…")) }
                     }
+                    if (attachmentName != null) Text("Attached: $attachmentName", color = KimMuted, modifier = Modifier.padding(horizontal = 22.dp, vertical = 4.dp))
                     Composer(input, { input = it }, { send() }, { if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) context.requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 5) else context.startForegroundService(Intent(context, KimVoiceService::class.java)) }, { actionMenu = true })
                 }
             }
@@ -179,6 +200,17 @@ class MainActivity : ComponentActivity() {
                 DropdownMenuItem(text = { Text("Prepare my day") }, onClick = { input = "Prepare my day"; actionMenu = false })
                 DropdownMenuItem(text = { Text("Show my calendar") }, onClick = { input = "Show my calendar"; actionMenu = false })
                 DropdownMenuItem(text = { Text("Review requests") }, onClick = { input = "Review my requests"; actionMenu = false })
+                DropdownMenuItem(text = { Text("Attach a file") }, onClick = { filePicker.launch(arrayOf("*/*")); actionMenu = false })
+                DropdownMenuItem(text = { Text("Connect to desktop") }, onClick = {
+                    actionMenu = false
+                    executor.execute {
+                        val result = runCatching { KimClient(baseUrl, pin, activeUser).connectDesktop(KimPrefs.deviceId(context)) }
+                            .getOrElse { "500: ${it.message ?: "connection failed"}" }
+                        runOnUiThread { messages.add(ChatMessage(false, if (result.startsWith("2")) "Desktop connection is ready. Kim can use the connected desktop when you ask." else "Desktop connection failed: ${result.substringAfter(": ")}")) }
+                    }
+                    context.startForegroundService(Intent(context, KimForegroundService::class.java))
+                })
+                DropdownMenuItem(text = { Text("Phone permissions") }, onClick = { actionMenu = false; context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) })
                 DropdownMenuItem(text = { Text("Settings / connect phone") }, onClick = { signIn = true; actionMenu = false })
             }
         }

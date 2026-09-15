@@ -10,8 +10,13 @@ class KimClient(private val baseUrl: String, private val token: String, private 
     fun getIntegrations(): String = request("GET", "/v1/integrations")
     fun getApprovals(): String = request("GET", "/v1/approvals")
     fun getVoiceSession(): String = request("GET", "/v1/voice/session")
-    fun chat(message: String, conversationId: String, deviceContext: String = "Android phone"): String = request(
-        "POST", "/v1/chat", JSONObject().put("message", message).put("conversation_id", conversationId).put("client", "android").put("device_context", deviceContext).toString()
+    fun chat(message: String, conversationId: String, deviceContext: String = "Android phone", attachmentName: String? = null, attachmentText: String? = null): String {
+        val body = JSONObject().put("message", message).put("conversation_id", conversationId).put("client", "android").put("device_context", deviceContext)
+        if (!attachmentName.isNullOrBlank() && !attachmentText.isNullOrBlank()) body.put("attachments", org.json.JSONArray().put(JSONObject().put("name", attachmentName).put("text", attachmentText)))
+        return request("POST", "/v1/chat", body.toString())
+    }
+    fun connectDesktop(deviceId: String): String = request(
+        "POST", "/v1/device/connect", JSONObject().put("device_id", deviceId).put("capabilities", listOf("open_url", "open_app", "notify", "media", "volume", "flashlight")).toString()
     )
     fun control(action: String): String = request("POST", "/v1/control", "{\"action\":\"$action\"}")
     fun approve(id: String): String = request("POST", "/v1/approvals/$id/approve", "{}")

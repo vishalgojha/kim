@@ -51,7 +51,7 @@ class KimVoiceService : Service() {
     private val listener = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
             webSocket.send(JSONObject().put("type", "conversation_initiation_client_data").put("conversation_config_override", JSONObject()).put("dynamic_variables", JSONObject().put("device_context", "Android phone for $user; use mobile capabilities only; reply in the user's language and Roman Hindi when Hindi is typed in Latin letters")).toString())
-            startAudio()
+            try { startAudio() } catch (error: Exception) { showError(error.message ?: "Microphone could not start"); stopSelf() }
         }
         override fun onMessage(webSocket: WebSocket, text: String) {
             try {
@@ -66,7 +66,7 @@ class KimVoiceService : Service() {
                 }
             } catch (_: Exception) { }
         }
-        override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { stopSelf() }
+        override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { if (code != 1000) showError("Voice session closed ($code): ${reason.ifBlank { "server ended the session" }}"); stopSelf() }
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { showError(t.message ?: "Voice connection failed"); stopSelf() }
     }
 
@@ -99,9 +99,14 @@ class KimVoiceService : Service() {
 
     private fun startAudio() {
         val min = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-        recorder = AudioRecord(MediaRecorder.AudioSource.MIC, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, min * 2)
-        player = AudioTrack(AudioManager.STREAM_MUSIC, 16000, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT, min * 2, AudioTrack.MODE_STREAM)
-        recorder?.startRecording(); player?.play(); recording = true
+        if (min <= 0) throw IllegalStateException("Android returned an invalid microphone buffer")
+        val localRecorder = AudioRecord(MediaRecorder.AudioSource.MIC, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, min * 2)
+        if (localRecorder.state != AudioRecord.STATE_INITIALIZED) { localRecorder.release(); throw IllegalStateException("Microphone is unavailable or already in use") }
+        val localPlayer = AudioTrack(AudioManager.STREAM_MUSIC, 16000, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT, min * 2, AudioTrack.MODE_STREAM)
+        recorder = localRecorder; player = localPlayer
+        localRecorder.startRecording()
+        if (localRecorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) throw IllegalStateException("Microphone permission is granted but recording did not start")
+        localPlayer.play(); recording = true
         Thread {
             val buffer = ByteArray(min.coerceAtLeast(2048))
             while (recording) {

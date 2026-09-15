@@ -301,6 +301,17 @@ class RemoteServer:
                             owner._persist_state()
                         self._reply(200, {"ok": True, "device_id": device_id})
                         return
+                    if self.path == "/v1/device/connect":
+                        device_id = str(data.get("device_id", "")).strip()
+                        if not device_id or len(device_id) > 100:
+                            raise ValueError("device_id is required")
+                        capabilities = data.get("capabilities", [])
+                        with owner.commands_lock:
+                            owner.devices[device_id] = {"device_id": device_id, "last_seen": time.time(), "capabilities": capabilities, "connected": True}
+                            owner._persist_state()
+                        owner._audit("device_connected", {"device_id": device_id, "capabilities": capabilities}, True)
+                        self._reply(200, {"ok": True, "device_id": device_id, "connected": True})
+                        return
                     if self.path == "/v1/device/command":
                         action = str(data.get("action", "")).strip().lower()
                         allowed = {
@@ -336,6 +347,15 @@ class RemoteServer:
                         user = self.headers.get("X-Kim-User", "").strip() or "default"
                         session_id = f"{user}:{data.get('conversation_id', 'web')}"
                         device_context = str(data.get("device_context", "web browser"))
+                        attachments = data.get("attachments") or []
+                        if isinstance(attachments, list):
+                            for attachment in attachments[:3]:
+                                if not isinstance(attachment, dict):
+                                    continue
+                                name = str(attachment.get("name", "attachment"))[:160]
+                                content = str(attachment.get("text", ""))[:120_000]
+                                if content:
+                                    message += f"\n\n[Attached file: {name}]\n{content}\n[/Attached file]"
                         if owner.text_chat is not None:
                             try:
                                 result = owner._run(owner.text_chat.chat(session_id, message, owner.create_approval, device_context))
