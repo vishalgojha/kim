@@ -103,8 +103,13 @@ class MainActivity : ComponentActivity() {
         val context = this@MainActivity
         val scope = rememberCoroutineScope()
         val drawer = rememberDrawerState(androidx.compose.material3.DrawerValue.Closed)
-        val messages = remember { mutableStateListOf<ChatMessage>() }
         var activeUser by remember { mutableStateOf(KimPrefs.activeUser(context)) }
+        var conversationId by remember { mutableStateOf(KimPrefs.currentChatId(context, activeUser)) }
+        var historyRefresh by remember { mutableStateOf(0) }
+        val chatHistory = remember(historyRefresh, activeUser) { KimPrefs.history(context, activeUser) }
+        val messages = remember(activeUser, conversationId) {
+            mutableStateListOf<ChatMessage>().also { list -> KimPrefs.messages(context, activeUser, conversationId).forEach { list.add(ChatMessage(it.first, it.second)) } }
+        }
         var input by remember { mutableStateOf("") }
         var thinking by remember { mutableStateOf(false) }
         var profileMenu by remember { mutableStateOf(false) }
@@ -136,16 +141,18 @@ class MainActivity : ComponentActivity() {
             if (pin.isBlank()) { signIn = true; return }
             input = ""
             messages.add(ChatMessage(true, text))
+            KimPrefs.appendMessage(context, activeUser, conversationId, true, text)
+            historyRefresh++
             thinking = true
             executor.execute {
-                val raw = runCatching { KimClient(baseUrl, pin, activeUser).chat(text, "android-${activeUser.lowercase()}-${KimPrefs.deviceId(context)}", "Android phone for $activeUser; mobile apps, notifications, media, volume, flashlight, microphone, and phone status are available", attachmentName, attachmentText) }
+                val raw = runCatching { KimClient(baseUrl, pin, activeUser).chat(text, conversationId, "Android phone for $activeUser; mobile apps, notifications, media, volume, flashlight, microphone, and phone status are available", attachmentName, attachmentText) }
                     .getOrElse { "500: ${it.message ?: "Kim is unavailable"}" }
                 val body = raw.substringAfter(": ", raw)
                 val reply = runCatching {
                     val json = JSONObject(body)
                     json.optString("message").ifBlank { json.optString("error").ifBlank { body } }
                 }.getOrDefault(body)
-                runOnUiThread { messages.add(ChatMessage(false, reply)); attachmentName = null; attachmentText = null; thinking = false }
+                runOnUiThread { messages.add(ChatMessage(false, reply)); KimPrefs.appendMessage(context, activeUser, conversationId, false, reply); historyRefresh++; attachmentName = null; attachmentText = null; thinking = false }
             }
         }
 
@@ -156,7 +163,10 @@ class MainActivity : ComponentActivity() {
             drawerContent = {
                 ModalDrawerSheet(drawerContainerColor = KimPanel) {
                     Text("Kim", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(24.dp))
-                    NavigationDrawerItem(label = { Text("New chat") }, selected = false, onClick = { messages.clear(); scope.launch { drawer.close() } }, modifier = Modifier.padding(horizontal = 12.dp))
+                    NavigationDrawerItem(label = { Text("New chat") }, selected = false, onClick = { conversationId = KimPrefs.newChatId(context, activeUser); input = ""; scope.launch { drawer.close() } }, modifier = Modifier.padding(horizontal = 12.dp))
+                    chatHistory.take(8).forEach { chat ->
+                        NavigationDrawerItem(label = { Text(chat.title.ifBlank { "New chat" }, maxLines = 1) }, selected = chat.id == conversationId, onClick = { conversationId = chat.id; KimPrefs.setCurrentChat(context, activeUser, chat.id); scope.launch { drawer.close() } }, modifier = Modifier.padding(horizontal = 12.dp))
+                    }
                     NavigationDrawerItem(label = { Text("Research") }, selected = false, onClick = { scope.launch { drawer.close() } }, modifier = Modifier.padding(horizontal = 12.dp))
                     NavigationDrawerItem(label = { Text("Approvals") }, selected = false, onClick = { actionMenu = true; scope.launch { drawer.close() } }, modifier = Modifier.padding(horizontal = 12.dp))
                     NavigationDrawerItem(label = { Text("Knowledge") }, selected = false, onClick = { scope.launch { drawer.close() } }, modifier = Modifier.padding(horizontal = 12.dp))
@@ -175,7 +185,7 @@ class MainActivity : ComponentActivity() {
                             Box {
                                 Button(onClick = { profileMenu = true }, colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent), contentPadding = PaddingValues(horizontal = 10.dp)) { Text(activeUser, color = KimMuted) }
                                 DropdownMenu(expanded = profileMenu, onDismissRequest = { profileMenu = false }) {
-                                    KimPrefs.users.forEach { user -> DropdownMenuItem(text = { Text("Using Kim as $user") }, onClick = { activeUser = user; pin = KimPrefs.pin(context, user); signIn = pin.isBlank(); KimPrefs.setActiveUser(context, user); profileMenu = false }) }
+                                    KimPrefs.users.forEach { user -> DropdownMenuItem(text = { Text("Using Kim as $user") }, onClick = { activeUser = user; conversationId = KimPrefs.currentChatId(context, user); pin = KimPrefs.pin(context, user); signIn = pin.isBlank(); KimPrefs.setActiveUser(context, user); profileMenu = false }) }
                                 }
                             }
                             IconButton(onClick = { actionMenu = true }) { Icon(Icons.Default.MoreVert, "More") }
