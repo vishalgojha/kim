@@ -22,7 +22,7 @@ const state = {
   pin: localStorage.getItem("kim.pin") || "",
   activeUser: localStorage.getItem("kim.user") || "Vishal",
   conversationId: localStorage.getItem(`kim.conversation.${localStorage.getItem("kim.user") || "Vishal"}`) || crypto.randomUUID(),
-  messages: [] as { role: string; text: string; attachmentName?: string }[],
+  messages: [] as { role: string; text: string; attachmentName?: string; toolsUsed?: string[] }[],
   attachment: null as { name: string; text: string } | null,
   pending: "" as string,
   voice: "online",
@@ -30,7 +30,7 @@ const state = {
 localStorage.setItem(`kim.conversation.${state.activeUser}`, state.conversationId);
 const historyKey = () => `kim.history.${state.activeUser}`;
 const loadMessages = () => { try { return JSON.parse(localStorage.getItem(historyKey()) || "{}")[state.conversationId] || []; } catch { return []; } };
-const saveMessage = (message: { role: string; text: string; attachmentName?: string }) => {
+const saveMessage = (message: { role: string; text: string; attachmentName?: string; toolsUsed?: string[] }) => {
   state.messages.push(message);
   try { const all = JSON.parse(localStorage.getItem(historyKey()) || "{}"); all[state.conversationId] = state.messages.slice(-100); localStorage.setItem(historyKey(), JSON.stringify(all)); } catch { /* best effort */ }
 };
@@ -148,7 +148,8 @@ function browser() {
   };
 }
 function chat() {
-  shell(`<section class="chat-page"><div class="hero-orb"><span class="orb"><i></i><i></i></span><div><strong>Kim is ready</strong><small>Ask Kim to act on your laptop, phone, or connected services.</small></div></div><div id="messages" class="messages">${state.messages.length ? state.messages.map((m) => `<article class="message ${m.role}"><small>${m.role === "user" ? "YOU" : "KIM"}</small><p>${esc(m.text)}</p>${m.attachmentName ? `<small>Attached: ${esc(m.attachmentName)}</small>` : ""}</article>`).join("") : `<div class="empty"><span class="spark">✦</span><p>Your workspace is quiet.</p><small>Ask Kim anything, attach a file, or use a connected device.</small></div>`}${state.pending ? `<div class="agent-status" aria-live="polite"><span class="spinner"></span>${esc(state.pending)}</div>` : ""}</div>${state.attachment ? `<div class="attachment-chip">Attached: ${esc(state.attachment.name)} <button type="button" id="clear-attachment">×</button></div>` : ""}<form id="chat-form" class="composer"><button type="button" id="attach" class="composer-icon">＋</button><input id="chat-input" autocomplete="off" placeholder="Message Kim…" ${state.pending ? "disabled" : ""} /><button type="button" id="mic" class="composer-icon" ${state.pending ? "disabled" : ""}>♩</button><button type="submit" ${state.pending ? "disabled" : ""}>↑</button></form><input id="file-picker" type="file" hidden /><div class="suggestions"><button data-prompt="Prepare my day">Prepare my day</button><button data-prompt="Show my calendar">Show my calendar</button></div></section>`);
+  const renderMessage = (m: { role: string; text: string; attachmentName?: string; toolsUsed?: string[] }) => `<article class="message ${m.role}"><small>${m.role === "user" ? "YOU" : "KIM"}</small><p>${esc(m.text)}</p>${m.toolsUsed?.length ? `<details class="tool-card"><summary><span class="tool-spark">✦</span> Tool use <span class="tool-count">${m.toolsUsed.length}</span></summary><div class="tool-list">${m.toolsUsed.map((tool) => `<span>${esc(tool)}</span>`).join("")}</div></details>` : ""}${m.attachmentName ? `<small>Attached: ${esc(m.attachmentName)}</small>` : ""}</article>`;
+  shell(`<section class="chat-page"><div class="hero-orb"><span class="orb"><i></i><i></i></span><div><strong>Kim is ready</strong><small>Ask Kim to act on your laptop, phone, or connected services.</small></div></div><div id="messages" class="messages">${state.messages.length ? state.messages.map(renderMessage).join("") : `<div class="empty"><span class="spark">✦</span><p>Your workspace is quiet.</p><small>Ask Kim anything, attach a file, or use a connected device.</small></div>`}${state.pending ? `<div class="agent-status" aria-live="polite"><span class="spinner"></span>${esc(state.pending)}</div>` : ""}</div>${state.attachment ? `<div class="attachment-chip">Attached: ${esc(state.attachment.name)} <button type="button" id="clear-attachment">×</button></div>` : ""}<form id="chat-form" class="composer"><button type="button" id="attach" class="composer-icon">＋</button><input id="chat-input" autocomplete="off" placeholder="Message Kim…" ${state.pending ? "disabled" : ""} /><button type="button" id="mic" class="composer-icon" ${state.pending ? "disabled" : ""}>♩</button><button type="submit" ${state.pending ? "disabled" : ""}>↑</button></form><input id="file-picker" type="file" hidden /><div class="suggestions"><button data-prompt="Prepare my day">Prepare my day</button><button data-prompt="Show my calendar">Show my calendar</button></div></section>`);
   document.querySelector<HTMLFormElement>("#chat-form")!.onsubmit = async (e) => {
     e.preventDefault();
     const input = document.querySelector<HTMLInputElement>("#chat-input")!;
@@ -166,8 +167,7 @@ function chat() {
       const timer = window.setTimeout(() => controller.abort(), 120_000);
       const out = await api("/v1/chat", { method: "POST", signal: controller.signal, body: JSON.stringify({ message: text, conversation_id: state.conversationId, client: "desktop", device_context: "Linux desktop with browser, apps, files, and connected laptop relay", attachments: attachment ? [{ name: attachment.name, text: attachment.text }] : [] }) });
       window.clearTimeout(timer);
-      const tools = Array.isArray(out.tools_used) && out.tools_used.length ? `\n\nTool calls: ${out.tools_used.join(", ")}` : "";
-      saveMessage({ role: "assistant", text: `${out.reply || out.message || JSON.stringify(out)}${tools}` });
+      saveMessage({ role: "assistant", text: out.reply || out.message || JSON.stringify(out), toolsUsed: Array.isArray(out.tools_used) ? out.tools_used : [] });
     } catch (error) {
       const message = (error as Error).name === "AbortError" ? "Kim timed out while waiting for the AI service." : (error as Error).message;
       saveMessage({ role: "assistant", text: `I couldn't complete that: ${message}` });
