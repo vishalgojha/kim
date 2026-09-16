@@ -322,18 +322,39 @@ class RemoteServer:
                 state = str((query.get("state") or [""])[0])
                 code = str((query.get("code") or [""])[0])
                 if not owner._consume_propai_state(state):
-                    self._reply(400, {"error": "invalid or expired PropAI OAuth state"})
+                    self._propai_oauth_page(
+                        "PropAI authorization expired",
+                        "This sign-in attempt is no longer valid. Return to Kim and start a fresh connection.",
+                        error=True,
+                    )
                     return
                 if not code:
-                    self._reply(400, {"error": "PropAI authorization was not completed"})
+                    self._propai_oauth_page(
+                        "PropAI authorization cancelled",
+                        "No authorization code was returned. Return to Kim and try again.",
+                        error=True,
+                    )
                     return
                 try:
                     owner._finish_propai_auth(code, state)
                 except ValueError as exc:
-                    self._reply(400, {"error": str(exc)})
+                    self._propai_oauth_page("PropAI connection failed", str(exc), error=True)
                     return
-                body = b"<html><body style='font-family:sans-serif;background:#08090b;color:white;padding:48px'><h2>PropAI connected</h2><p>Authorization complete.</p><button onclick=\"history.back()\" style='padding:12px 18px;border:0;border-radius:8px;cursor:pointer'>Return to Kim</button></body></html>"
-                self.send_response(200)
+                self._propai_oauth_page("PropAI connected", "Authorization complete. You can return to Kim.")
+
+            def _propai_oauth_page(self, title: str, message: str, error: bool = False) -> None:
+                # This page is deliberately self-contained: it must remain usable
+                # even when the OAuth flow was opened in a separate WebView.
+                colour = "#f07b86" if error else "#63e6a1"
+                start_url = "/v1/propai/start"
+                body = f"""<!doctype html><meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>{title}</title><body style='font-family:system-ui,sans-serif;background:#08090b;color:#f5f7fb;padding:48px;max-width:680px;margin:auto'>
+<h2 style='color:{colour}'>{title}</h2><p style='line-height:1.6'>{message}</p>
+<p style='display:flex;gap:12px;flex-wrap:wrap'>
+<a href='/' style='display:inline-block;padding:12px 18px;border-radius:8px;background:#252832;color:white;text-decoration:none'>Back to Kim</a>
+<a href='{start_url}' style='display:inline-block;padding:12px 18px;border-radius:8px;background:#36df91;color:#06130b;text-decoration:none'>Start PropAI again</a>
+</p></body>""".encode()
+                self.send_response(200 if not error else 400)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()

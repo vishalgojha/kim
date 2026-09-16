@@ -1,4 +1,5 @@
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import "./styles.css";
 
 type Page = "chat" | "approvals";
@@ -143,9 +144,19 @@ async function connectPropAI() {
       localStorage.setItem("kim.server", DEFAULT_SERVER);
       data = await api("/v1/propai/start");
     }
-    // Tauri's WebView can silently block window.open. Navigating explicitly
-    // guarantees the PropAI OAuth page is opened after the button click.
-    window.location.href = data.auth_url;
+    // Keep Kim alive while PropAI/Supabase authentication runs in its own
+    // WebView. The old implementation navigated the main window away, which
+    // made an expired callback look like Kim had exited.
+    const authWindow = new WebviewWindow("propai-auth", {
+      url: data.auth_url,
+      title: "Connect PropAI",
+      width: 720,
+      height: 820,
+      resizable: true,
+    });
+    authWindow.once("tauri://error", (event) => {
+      alert(`PropAI window could not open: ${String(event.payload)}`);
+    });
   } catch (error) {
     alert(`PropAI connection could not start: ${(error as Error).message}`);
   }
