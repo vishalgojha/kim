@@ -104,12 +104,17 @@ class ElevenTextChat:
 
             started = False
             deadline = asyncio.get_running_loop().time() + 45
+            quiet_deadline = None
             seen_events: List[str] = []
             while True:
-                timeout = max(1.0, deadline - asyncio.get_running_loop().time())
+                now = asyncio.get_running_loop().time()
+                end = min(deadline, quiet_deadline) if quiet_deadline else deadline
+                timeout = max(1.0, end - now)
                 try:
                     raw = await asyncio.wait_for(ws.recv(), timeout=timeout)
                 except asyncio.TimeoutError as exc:
+                    if chunks and tools_used:
+                        return {"ok": True, "message": "".join(chunks).strip(), "tools_used": tools_used, "tool_results_completed": True}
                     raise RuntimeError(f"ElevenLabs chat timed out before a text response was completed; events: {', '.join(seen_events) or 'none'}") from exc
                 try:
                     msg = json.loads(raw)
@@ -145,6 +150,7 @@ class ElevenTextChat:
                     else:
                         result, is_error = await self.registry.run(name, params)
                     tools_used.append(name)
+                    quiet_deadline = None
                     await ws.send(json.dumps({
                         "type": "client_tool_result",
                         "tool_call_id": tool_call_id,
@@ -156,8 +162,10 @@ class ElevenTextChat:
                 text = self._part_text(msg)
                 if text:
                     chunks.append(text)
-                    if mtype in {"agent_response", "agent_response_correction"}:
+                    if not tools_used and mtype in {"agent_response", "agent_response_correction"}:
                         return {"ok": True, "message": "".join(chunks).strip(), "tools_used": tools_used, "tool_results_completed": bool(tools_used)}
+                    if tools_used:
+                        quiet_deadline = asyncio.get_running_loop().time() + 5
                     continue
 
                 if mtype == "agent_response_complete":
