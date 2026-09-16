@@ -162,9 +162,10 @@ class ElevenTextChat:
                 text = self._part_text(msg)
                 if text:
                     chunks.append(text)
-                    if not tools_used and mtype in {"agent_response", "agent_response_correction"}:
-                        return {"ok": True, "message": "".join(chunks).strip(), "tools_used": tools_used, "tool_results_completed": bool(tools_used)}
-                    if tools_used:
+                    if mtype in {"agent_response", "agent_response_correction"}:
+                        # ElevenLabs may emit an interim acknowledgement (for
+                        # example, “Searching…”) before the client tool call.
+                        # Keep the socket open so the actual result can follow.
                         quiet_deadline = asyncio.get_running_loop().time() + 5
                     continue
 
