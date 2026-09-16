@@ -247,11 +247,6 @@ class RemoteServer:
                         self._reply(400, {"error": str(exc)})
                     return
 
-                if self.path == "/v1/propai/disconnect":
-                    owner._disconnect_propai()
-                    self._reply(200, {"ok": True, "connected": False})
-                    return
-
                 if self.path == "/v1/google/start":
                     try:
                         self._reply(200, {"ok": True, "auth_url": owner._google_auth_url(self)})
@@ -372,6 +367,10 @@ class RemoteServer:
                     return
                 try:
                     data = self._json()
+                    if self.path == "/v1/propai/disconnect":
+                        owner._disconnect_propai()
+                        self._reply(200, {"ok": True, "connected": False})
+                        return
                     if self.path == "/v1/control":
                         action = str(data.get("action", "")).lower()
                         if action not in {"pause", "wake"}:
