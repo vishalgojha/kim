@@ -152,6 +152,13 @@ function chat() {
   document.querySelector("#attach")?.addEventListener("click", () => document.querySelector<HTMLInputElement>("#file-picker")?.click());
   document.querySelector<HTMLInputElement>("#file-picker")?.addEventListener("change", (event) => { const file = (event.target as HTMLInputElement).files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { state.attachment = { name: file.name, text: String(reader.result || "").slice(0, 120000) }; render(); }; reader.readAsText(file); });
   document.querySelector("#clear-attachment")?.addEventListener("click", () => { state.attachment = null; render(); });
+  document.querySelector("#mic")?.addEventListener("click", () => {
+    const Recognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!Recognition) { alert("Voice input is available on Android; this desktop WebView does not provide speech recognition."); return; }
+    const recognition = new Recognition(); recognition.lang = "en-IN";
+    recognition.onresult = (event: any) => { const input = document.querySelector<HTMLInputElement>("#chat-input"); if (input) input.value = event.results[0][0].transcript; };
+    recognition.start();
+  });
   document.querySelectorAll<HTMLButtonElement>("[data-prompt]").forEach((b) => b.onclick = () => { document.querySelector<HTMLInputElement>("#chat-input")!.value = b.dataset.prompt!; document.querySelector<HTMLFormElement>("#chat-form")!.requestSubmit(); });
 }
 function research() {
