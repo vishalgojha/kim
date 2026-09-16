@@ -2,7 +2,7 @@ import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import "./styles.css";
 
-type Page = "chat" | "approvals";
+type Page = "chat" | "browser" | "approvals";
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const DEFAULT_SERVER = "https://app.vishalojha.me";
 const win = getCurrentWindow();
@@ -84,7 +84,7 @@ function shell(content: string) {
     <aside class="rail">
       <div class="brand"><span class="mark"><i></i><i></i></span><span>Kim</span></div>
       <div class="eyebrow">PERSONAL AGENT</div>
-      <nav>${nav("chat", "⌁", "Talk to Kim")}${nav("approvals", "✓", "Approvals")}</nav>
+      <nav>${nav("chat", "⌁", "Talk to Kim")}${nav("browser", "◉", "Browser")}${nav("approvals", "✓", "Approvals")}</nav>
       <div class="rail-bottom"><button id="propai-connect" class="rail-action">◈ <span>Connect PropAI</span></button><button id="settings" class="rail-action">⚙ <span>Settings</span></button><div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-label">Checking laptop relay…</span></div></div>
     </aside>
     <main class="main"><header><div><div class="kicker">KIM WORKSPACE</div><h1>${title()}</h1></div><div class="header-actions"><span class="pill"><span class="dot"></span> Online</span><button id="compact" class="icon-button" title="Collapse">▾</button><button id="refresh" class="icon-button" title="Refresh">↻</button></div></header>${content}</main>
@@ -96,7 +96,7 @@ function shell(content: string) {
   updateConnection();
 }
 function nav(page: Page, icon: string, label: string) { return `<button data-page="${page}" class="nav-item ${state.page === page ? "active" : ""}"><b>${icon}</b><span>${label}</span></button>`; }
-function title() { return ({ chat: "What should we do?", approvals: "Review requests" }[state.page]); }
+function title() { return ({ chat: "What should we do?", browser: "Kim Browser", approvals: "Review requests" }[state.page]); }
 
 function mini() {
   const last = state.messages[state.messages.length - 1];
@@ -116,8 +116,21 @@ function mini() {
 
 function render() {
   if (state.page === "chat") return chat();
+  if (state.page === "browser") return browser();
   if (state.page === "approvals") return approvals();
   return chat();
+}
+function browser() {
+  shell(`<section class="panel-page browser-page"><div class="intro">Open websites in Kim's own browser window. Your Kim chat stays open while you browse.</div><form id="browser-form" class="browser-form"><input id="browser-url" autocomplete="off" placeholder="https://example.com or search the web" /><button>Open browser</button></form><div class="browser-card"><strong>Browser tools</strong><p>Use the browser window for sign-ins and pages. Ask Kim to open a URL or work with the connected desktop when you need automation.</p></div></section>`);
+  document.querySelector<HTMLFormElement>("#browser-form")!.onsubmit = (event) => {
+    event.preventDefault();
+    const input = document.querySelector<HTMLInputElement>("#browser-url")!;
+    const raw = input.value.trim();
+    if (!raw) return;
+    const url = /^(https?:\/\/)/i.test(raw) ? raw : `https://www.google.com/search?q=${encodeURIComponent(raw)}`;
+    const browserWindow = new WebviewWindow(`kim-browser-${Date.now()}`, { url, title: "Kim Browser", width: 1280, height: 820, resizable: true });
+    browserWindow.once("tauri://error", (event) => alert(`Browser could not open: ${String(event.payload)}`));
+  };
 }
 function chat() {
   shell(`<section class="chat-page"><div class="hero-orb"><span class="orb"><i></i><i></i></span><div><strong>Kim is ready</strong><small>Ask Kim to act on your laptop, phone, or connected services.</small></div></div><div id="messages" class="messages">${state.messages.length ? state.messages.map((m) => `<article class="message ${m.role}"><small>${m.role === "user" ? "YOU" : "KIM"}</small><p>${esc(m.text)}</p></article>`).join("") : `<div class="empty"><span class="spark">✦</span><p>Your workspace is quiet.</p><small>Ask Kim to open an app, manage a task, or work with a connected service.</small></div>`}</div><form id="chat-form" class="composer"><input id="chat-input" autocomplete="off" placeholder="Ask Kim anything…" /><button>↑</button></form><div class="suggestions"><button data-prompt="Prepare my day">Prepare my day</button><button data-prompt="Show my calendar">Show my calendar</button></div></section>`);

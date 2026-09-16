@@ -14,6 +14,8 @@ PANEL_SVC="kim-panel.service"
 PANEL_DEST="$HOME/.config/systemd/user/$PANEL_SVC"
 DESKTOP_SRC="$DIR/systemd/kim.desktop"
 DESKTOP_DEST="$HOME/.local/share/applications/kim.desktop"
+ICON_SRC="$DIR/desktop/src-tauri/icons/kim-desktop.svg"
+ICON_DEST="$HOME/.local/share/icons/hicolor/scalable/apps/kim-desktop.svg"
 VOICE_COMMAND="$HOME/.aurora/voice_command"
 APP_BIN="$DIR/desktop/src-tauri/target/debug/kim-desktop"
 
@@ -22,6 +24,8 @@ case "${1:-}" in
     mkdir -p "$HOME/.config/systemd/user"
     cp "$SRC" "$DEST"
     cp "$WA_SRC" "$WA_DEST"
+    mkdir -p "$(dirname "$ICON_DEST")"
+    cp "$ICON_SRC" "$ICON_DEST"
     mkdir -p "$HOME/.local/share/applications"
     # Prefer the packaged Tauri launcher when it exists. The legacy lowercase
     # launcher otherwise creates a second Kim icon in GNOME's app grid.

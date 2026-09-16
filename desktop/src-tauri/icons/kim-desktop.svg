@@ -1,17 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#303640"/>
-      <stop offset="1" stop-color="#11151b"/>
-    </linearGradient>
-    <linearGradient id="screen" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#f5f7fa"/>
-      <stop offset="1" stop-color="#9da7b5"/>
-    </linearGradient>
-  </defs>
-  <rect x="20" y="20" width="472" height="472" rx="112" fill="url(#bg)" stroke="#667181" stroke-width="8"/>
-  <rect x="92" y="104" width="328" height="236" rx="42" fill="#090c11" stroke="url(#screen)" stroke-width="18"/>
-  <circle cx="176" cy="222" r="22" fill="#f6f8fb"/>
-  <circle cx="336" cy="222" r="22" fill="#f6f8fb"/>
-  <path d="M132 390h248M176 390l-26 42h212l-26-42" fill="none" stroke="#c4ccd6" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect width="512" height="512" rx="112" fill="#050505"/>
+  <path d="M106 91h300c29 0 52 23 52 52v174c0 29-23 52-52 52H282l-68 61v-61h-108c-29 0-52-23-52-52V143c0-29 23-52 52-52Z" fill="#f2f2f2"/>
+  <path d="M155 156h42v65l67-65h55l-78 79 84 90h-58l-70-73v73h-42V156Z" fill="#050505"/>
 </svg>
