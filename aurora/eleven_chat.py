@@ -113,8 +113,8 @@ class ElevenTextChat:
                 try:
                     raw = await asyncio.wait_for(ws.recv(), timeout=timeout)
                 except asyncio.TimeoutError as exc:
-                    if chunks and tools_used:
-                        return {"ok": True, "message": "".join(chunks).strip(), "tools_used": tools_used, "tool_results_completed": True}
+                    if chunks:
+                        return {"ok": True, "message": "".join(chunks).strip(), "tools_used": tools_used, "tool_results_completed": bool(tools_used)}
                     raise RuntimeError(f"ElevenLabs chat timed out before a text response was completed; events: {', '.join(seen_events) or 'none'}") from exc
                 try:
                     msg = json.loads(raw)
