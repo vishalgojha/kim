@@ -33,10 +33,13 @@ def _endpoint() -> str:
 
 
 def _token() -> str:
+    state_path = Path(os.environ.get("KIM_REMOTE_STATE_PATH", "~/.aurora/remote-state.json")).expanduser()
+    if state_path.with_name("propai-disconnected").exists():
+        return ""
     configured = os.environ.get("PROPAI_MCP_TOKEN", "").strip()
     if configured:
         return configured
-    default_path = Path(os.environ.get("KIM_REMOTE_STATE_PATH", "~/.aurora/remote-state.json")).expanduser().with_name("propai-token.json")
+    default_path = state_path.with_name("propai-token.json")
     path = Path(os.environ.get("KIM_PROPAI_TOKEN_PATH", str(default_path))).expanduser()
     try:
         token = json.loads(path.read_text(encoding="utf-8"))

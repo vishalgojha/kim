@@ -9,6 +9,7 @@ class KimClient(private val baseUrl: String, private val token: String, private 
     fun getStatus(): String = request("GET", "/v1/status")
     fun getIntegrations(): String = request("GET", "/v1/integrations")
     fun propaiStart(): String = request("GET", "/v1/propai/start")
+    fun propaiDisconnect(): String = request("POST", "/v1/propai/disconnect", "{}")
     fun getApprovals(): String = request("GET", "/v1/approvals")
     fun getVoiceSession(): String = request("GET", "/v1/voice/session")
     fun musicStatus(jobId: String): String = request("GET", "/v1/music/${java.net.URLEncoder.encode(jobId, "UTF-8")}")

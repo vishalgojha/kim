@@ -231,6 +231,13 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 })
+                DropdownMenuItem(text = { Text("Disconnect PropAI") }, onClick = {
+                    actionMenu = false
+                    executor.execute {
+                        val raw = runCatching { KimClient(baseUrl, pin, activeUser).propaiDisconnect() }.getOrElse { "500: ${it.message ?: "connection failed"}" }
+                        runOnUiThread { messages.add(ChatMessage(false, if (raw.startsWith("200:")) "PropAI MCP disconnected." else "PropAI disconnect failed: ${raw.substringAfter(": ")}")) }
+                    }
+                })
                 DropdownMenuItem(text = { Text("Connect to desktop") }, onClick = {
                     actionMenu = false
                     executor.execute {

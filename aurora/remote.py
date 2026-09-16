@@ -230,7 +230,7 @@ class RemoteServer:
                 if self.path == "/v1/integrations":
                     google_ready = bool(os.environ.get("NANGO_SECRET_KEY", "").strip() and os.environ.get("NANGO_GMAIL_INTEGRATION_ID", "").strip() and os.environ.get("NANGO_GMAIL_CONNECTION_ID", "").strip()) or bool(os.environ.get("GOOGLE_TOKEN_JSON", "").strip()) or Path(os.environ.get("GOOGLE_TOKEN_PATH", "~/.aurora/google-token.json")).expanduser().exists()
                     whatsapp_ready = bool(os.environ.get("WHATSAPP_CLOUD_API_TOKEN", "").strip() and os.environ.get("WHATSAPP_CLOUD_PHONE_NUMBER_ID", "").strip())
-                    propai_ready = bool(os.environ.get("PROPAI_MCP_TOKEN", "").strip()) or owner._propai_token_path().exists()
+                    propai_ready = not owner._propai_disconnected_path().exists() and (bool(os.environ.get("PROPAI_MCP_TOKEN", "").strip()) or owner._propai_token_path().exists())
                     self._reply(200, {"ok": True, "integrations": {
                         "gmail": {"cloud": google_ready, "laptop_fallback": True},
                         "calendar": {"cloud": google_ready, "laptop_fallback": True},
@@ -246,6 +246,12 @@ class RemoteServer:
                     except ValueError as exc:
                         self._reply(400, {"error": str(exc)})
                     return
+
+                if self.path == "/v1/propai/disconnect":
+                    owner._disconnect_propai()
+                    self._reply(200, {"ok": True, "connected": False})
+                    return
+
                 if self.path == "/v1/google/start":
                     try:
                         self._reply(200, {"ok": True, "auth_url": owner._google_auth_url(self)})
@@ -672,6 +678,14 @@ class RemoteServer:
     def _propai_token_path(self) -> Path:
         return Path(os.environ.get("KIM_PROPAI_TOKEN_PATH", str(self.state_path.with_name("propai-token.json")))).expanduser()
 
+    def _propai_disconnected_path(self) -> Path:
+        return self.state_path.with_name("propai-disconnected")
+
+    def _disconnect_propai(self) -> None:
+        self._propai_token_path().unlink(missing_ok=True)
+        self._propai_disconnected_path().write_text("disconnected\n", encoding="utf-8")
+        self._audit("propai_disconnect", {}, True)
+
     def _propai_redirect_uri(self) -> str:
         if not self.remote_domain:
             raise ValueError("remote.domain is required for PropAI connection")
@@ -748,6 +762,7 @@ class RemoteServer:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(token), encoding="utf-8")
         path.chmod(0o600)
+        self._propai_disconnected_path().unlink(missing_ok=True)
         self.propai_oauth.pop(state, None)
         self._persist_state()
 

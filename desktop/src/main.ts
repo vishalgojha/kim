@@ -105,7 +105,10 @@ function shell(content: string) {
   document.querySelector("#settings")?.addEventListener("click", settings);
   document.querySelector("#new-chat")?.addEventListener("click", () => { state.conversationId = crypto.randomUUID(); localStorage.setItem(`kim.conversation.${state.activeUser}`, state.conversationId); state.messages = []; state.attachment = null; state.page = "chat"; render(); });
   document.querySelector("#user-switch")?.addEventListener("click", () => { state.activeUser = state.activeUser === "Vishal" ? "Kapil" : "Vishal"; localStorage.setItem("kim.user", state.activeUser); state.conversationId = localStorage.getItem(`kim.conversation.${state.activeUser}`) || crypto.randomUUID(); localStorage.setItem(`kim.conversation.${state.activeUser}`, state.conversationId); state.messages = loadMessages(); render(); });
-  document.querySelector("#propai-connect")?.addEventListener("click", connectPropAI);
+  document.querySelector("#propai-connect")?.addEventListener("click", () => {
+    const button = document.querySelector<HTMLButtonElement>("#propai-connect");
+    if (button?.dataset.connected === "true") disconnectPropAI(); else connectPropAI();
+  });
   document.querySelector("#compact")?.addEventListener("click", () => toggleView(true));
   updateConnection();
   updatePropAIStatus();
@@ -229,13 +232,20 @@ async function updatePropAIStatus() {
   try {
     const data = await api("/v1/integrations");
     const connected = Boolean(data.integrations?.propai_mcp?.connected);
-    button.querySelector("span")!.textContent = connected ? "PropAI connected" : "Connect PropAI";
-    button.disabled = connected;
+    button.querySelector("span")!.textContent = connected ? "Disconnect PropAI" : "Connect PropAI";
+    button.dataset.connected = connected ? "true" : "false";
+    button.disabled = false;
     button.title = connected ? "PropAI MCP is connected" : "Connect your PropAI workspace";
   } catch {
     button.querySelector("span")!.textContent = "Connect PropAI";
     button.disabled = false;
   }
+}
+
+async function disconnectPropAI() {
+  if (!confirm("Disconnect PropAI MCP from Kim?")) return;
+  try { await api("/v1/propai/disconnect", { method: "POST", body: "{}" }); updatePropAIStatus(); }
+  catch (error) { alert(`PropAI disconnect failed: ${(error as Error).message}`); }
 }
 
 async function updateConnection() {
