@@ -62,6 +62,7 @@ class RemoteServer:
         self.speak = speak
         self.voice_url = voice_url
         self.text_chat = text_chat
+        self.last_text_chat_error = ""
         self.audit_path = Path(os.environ.get("KIM_REMOTE_AUDIT_PATH", str(remote.get("audit_path", "~/.aurora/remote-audit.jsonl")))).expanduser()
         self.state_path = Path(os.environ.get("KIM_REMOTE_STATE_PATH", str(remote.get("state_path", "~/.aurora/remote-state.json")))).expanduser()
         self.remote_domain = str(remote.get("domain", "")).strip().rstrip("/")
@@ -184,7 +185,7 @@ class RemoteServer:
                         state = state_path.read_text().strip()
                     except OSError:
                         state = "offline"
-                    self._reply(200, {"ok": True, "voice_state": state, "agent": owner.agent.status(), "allowed_tools": sorted(owner.allowed_tools), "direct_tools": sorted(owner.direct_tools)})
+                    self._reply(200, {"ok": True, "voice_state": state, "agent": owner.agent.status(), "elevenlabs": {"text_chat_initialized": owner.text_chat is not None, "agent_id_configured": bool(getattr(owner.text_chat, "agent_id", "")), "last_error": owner.last_text_chat_error}, "allowed_tools": sorted(owner.allowed_tools), "direct_tools": sorted(owner.direct_tools)})
                     return
                 if self.path.startswith("/v1/music/"):
                     job_id = self.path.removeprefix("/v1/music/").strip("/")
@@ -450,6 +451,7 @@ class RemoteServer:
                                 # Text chat is an optional ElevenLabs path. Do not make
                                 # ordinary Android/web chat fail when that websocket or
                                 # signed URL is temporarily unavailable.
+                                owner.last_text_chat_error = str(exc)[:500]
                                 log.warning("ElevenLabs text chat failed; falling back to Kim agent: %s", exc)
                                 result = owner._run(owner.agent.chat(session_id, message, owner.create_approval))
                         else:
