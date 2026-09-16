@@ -44,6 +44,8 @@ class ElevenTextChat:
 
     @staticmethod
     def _find_text(value: Any) -> str:
+        if isinstance(value, str):
+            return value if value.strip() else ""
         if isinstance(value, dict):
             for key in ("agent_response", "text", "content"):
                 text = value.get(key)
