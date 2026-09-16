@@ -85,7 +85,7 @@ function shell(content: string) {
       <div class="brand"><span class="mark"><i></i><i></i></span><span>Kim</span></div>
       <div class="eyebrow">PERSONAL AGENT</div>
       <nav>${nav("chat", "⌁", "Talk to Kim")}${nav("browser", "◉", "Browser")}${nav("approvals", "✓", "Approvals")}</nav>
-      <div class="rail-bottom"><button id="propai-connect" class="rail-action">◈ <span>Connect PropAI</span></button><button id="settings" class="rail-action">⚙ <span>Settings</span></button><div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-label">Checking laptop relay…</span></div></div>
+      <div class="rail-bottom"><button id="propai-connect" class="rail-action">◈ <span>Checking PropAI…</span></button><button id="settings" class="rail-action">⚙ <span>Settings</span></button><div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-label">Checking laptop relay…</span></div></div>
     </aside>
     <main class="main"><header><div><div class="kicker">KIM WORKSPACE</div><h1>${title()}</h1></div><div class="header-actions"><span class="pill"><span class="dot"></span> Online</span><button id="compact" class="icon-button" title="Collapse">▾</button><button id="refresh" class="icon-button" title="Refresh">↻</button></div></header>${content}</main>
   </div>`;
@@ -94,6 +94,7 @@ function shell(content: string) {
   document.querySelector("#propai-connect")?.addEventListener("click", connectPropAI);
   document.querySelector("#compact")?.addEventListener("click", () => toggleView(true));
   updateConnection();
+  updatePropAIStatus();
 }
 function nav(page: Page, icon: string, label: string) { return `<button data-page="${page}" class="nav-item ${state.page === page ? "active" : ""}"><b>${icon}</b><span>${label}</span></button>`; }
 function title() { return ({ chat: "What should we do?", browser: "Kim Browser", approvals: "Review requests" }[state.page]); }
@@ -172,6 +173,21 @@ async function connectPropAI() {
     });
   } catch (error) {
     alert(`PropAI connection could not start: ${(error as Error).message}`);
+  }
+}
+
+async function updatePropAIStatus() {
+  const button = document.querySelector<HTMLButtonElement>("#propai-connect");
+  if (!button) return;
+  try {
+    const data = await api("/v1/integrations");
+    const connected = Boolean(data.integrations?.propai_mcp?.connected);
+    button.querySelector("span")!.textContent = connected ? "PropAI connected" : "Connect PropAI";
+    button.disabled = connected;
+    button.title = connected ? "PropAI MCP is connected" : "Connect your PropAI workspace";
+  } catch {
+    button.querySelector("span")!.textContent = "Connect PropAI";
+    button.disabled = false;
   }
 }
 

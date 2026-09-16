@@ -351,8 +351,8 @@ class RemoteServer:
 <title>{title}</title><body style='font-family:system-ui,sans-serif;background:#08090b;color:#f5f7fb;padding:48px;max-width:680px;margin:auto'>
 <h2 style='color:{colour}'>{title}</h2><p style='line-height:1.6'>{message}</p>
 <p style='display:flex;gap:12px;flex-wrap:wrap'>
-<button onclick='window.close();setTimeout(function(){{history.back()}},250)' style='padding:12px 18px;border:0;border-radius:8px;background:#252832;color:white;cursor:pointer'>Close and return to Kim</button>
-<a href='{start_url}' style='display:inline-block;padding:12px 18px;border-radius:8px;background:#36df91;color:#06130b;text-decoration:none'>Start PropAI again</a>
+<button onclick='window.close()' style='padding:12px 18px;border:0;border-radius:8px;background:#252832;color:white;cursor:pointer'>Close this window</button>
+{"<a href='" + start_url + "' style='display:inline-block;padding:12px 18px;border-radius:8px;background:#36df91;color:#06130b;text-decoration:none'>Start PropAI again</a>" if error else ""}
 </p></body>""".encode()
                 self.send_response(200 if not error else 400)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
