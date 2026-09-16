@@ -24,6 +24,7 @@ const state = {
   conversationId: localStorage.getItem(`kim.conversation.${localStorage.getItem("kim.user") || "Vishal"}`) || crypto.randomUUID(),
   messages: [] as { role: string; text: string; attachmentName?: string }[],
   attachment: null as { name: string; text: string } | null,
+  pending: "" as string,
   voice: "online",
 };
 localStorage.setItem(`kim.conversation.${state.activeUser}`, state.conversationId);
@@ -147,8 +148,31 @@ function browser() {
   };
 }
 function chat() {
-  shell(`<section class="chat-page"><div class="hero-orb"><span class="orb"><i></i><i></i></span><div><strong>Kim is ready</strong><small>Ask Kim to act on your laptop, phone, or connected services.</small></div></div><div id="messages" class="messages">${state.messages.length ? state.messages.map((m) => `<article class="message ${m.role}"><small>${m.role === "user" ? "YOU" : "KIM"}</small><p>${esc(m.text)}</p>${m.attachmentName ? `<small>Attached: ${esc(m.attachmentName)}</small>` : ""}</article>`).join("") : `<div class="empty"><span class="spark">✦</span><p>Your workspace is quiet.</p><small>Ask Kim anything, attach a file, or use a connected device.</small></div>`}</div>${state.attachment ? `<div class="attachment-chip">Attached: ${esc(state.attachment.name)} <button type="button" id="clear-attachment">×</button></div>` : ""}<form id="chat-form" class="composer"><button type="button" id="attach" class="composer-icon">＋</button><input id="chat-input" autocomplete="off" placeholder="Message Kim…" /><button type="button" id="mic" class="composer-icon">♩</button><button type="submit">↑</button></form><input id="file-picker" type="file" hidden /><div class="suggestions"><button data-prompt="Prepare my day">Prepare my day</button><button data-prompt="Show my calendar">Show my calendar</button></div></section>`);
-  document.querySelector<HTMLFormElement>("#chat-form")!.onsubmit = async (e) => { e.preventDefault(); const input = document.querySelector<HTMLInputElement>("#chat-input")!; const text = input.value.trim(); if (!text || !state.pin) return; input.value = ""; const attachment = state.attachment; state.attachment = null; saveMessage({ role: "user", text, attachmentName: attachment?.name }); render(); try { const out = await api("/v1/chat", { method: "POST", body: JSON.stringify({ message: text, conversation_id: state.conversationId, client: "desktop", device_context: "Linux desktop with browser, apps, files, and connected laptop relay", attachments: attachment ? [{ name: attachment.name, text: attachment.text }] : [] }) }); saveMessage({ role: "assistant", text: out.reply || out.message || JSON.stringify(out) }); } catch (error) { saveMessage({ role: "assistant", text: `I couldn't complete that: ${(error as Error).message}` }); } render(); };
+  shell(`<section class="chat-page"><div class="hero-orb"><span class="orb"><i></i><i></i></span><div><strong>Kim is ready</strong><small>Ask Kim to act on your laptop, phone, or connected services.</small></div></div><div id="messages" class="messages">${state.messages.length ? state.messages.map((m) => `<article class="message ${m.role}"><small>${m.role === "user" ? "YOU" : "KIM"}</small><p>${esc(m.text)}</p>${m.attachmentName ? `<small>Attached: ${esc(m.attachmentName)}</small>` : ""}</article>`).join("") : `<div class="empty"><span class="spark">✦</span><p>Your workspace is quiet.</p><small>Ask Kim anything, attach a file, or use a connected device.</small></div>`}${state.pending ? `<div class="agent-status" aria-live="polite"><span class="spinner"></span>${esc(state.pending)}</div>` : ""}</div>${state.attachment ? `<div class="attachment-chip">Attached: ${esc(state.attachment.name)} <button type="button" id="clear-attachment">×</button></div>` : ""}<form id="chat-form" class="composer"><button type="button" id="attach" class="composer-icon">＋</button><input id="chat-input" autocomplete="off" placeholder="Message Kim…" ${state.pending ? "disabled" : ""} /><button type="button" id="mic" class="composer-icon" ${state.pending ? "disabled" : ""}>♩</button><button type="submit" ${state.pending ? "disabled" : ""}>↑</button></form><input id="file-picker" type="file" hidden /><div class="suggestions"><button data-prompt="Prepare my day">Prepare my day</button><button data-prompt="Show my calendar">Show my calendar</button></div></section>`);
+  document.querySelector<HTMLFormElement>("#chat-form")!.onsubmit = async (e) => {
+    e.preventDefault();
+    const input = document.querySelector<HTMLInputElement>("#chat-input")!;
+    const text = input.value.trim();
+    if (!text) return;
+    if (!state.pin) { saveMessage({ role: "assistant", text: "Open Settings and add your Kim PIN before chatting." }); render(); return; }
+    input.value = "";
+    const attachment = state.attachment;
+    state.attachment = null;
+    saveMessage({ role: "user", text, attachmentName: attachment?.name });
+    state.pending = "Kim is thinking…";
+    render();
+    try {
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), 120_000);
+      const out = await api("/v1/chat", { method: "POST", signal: controller.signal, body: JSON.stringify({ message: text, conversation_id: state.conversationId, client: "desktop", device_context: "Linux desktop with browser, apps, files, and connected laptop relay", attachments: attachment ? [{ name: attachment.name, text: attachment.text }] : [] }) });
+      window.clearTimeout(timer);
+      const tools = Array.isArray(out.tools_used) && out.tools_used.length ? `\n\nTool calls: ${out.tools_used.join(", ")}` : "";
+      saveMessage({ role: "assistant", text: `${out.reply || out.message || JSON.stringify(out)}${tools}` });
+    } catch (error) {
+      const message = (error as Error).name === "AbortError" ? "Kim timed out while waiting for the AI service." : (error as Error).message;
+      saveMessage({ role: "assistant", text: `I couldn't complete that: ${message}` });
+    } finally { state.pending = ""; render(); }
+  };
   document.querySelector("#attach")?.addEventListener("click", () => document.querySelector<HTMLInputElement>("#file-picker")?.click());
   document.querySelector<HTMLInputElement>("#file-picker")?.addEventListener("change", (event) => { const file = (event.target as HTMLInputElement).files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { state.attachment = { name: file.name, text: String(reader.result || "").slice(0, 120000) }; render(); }; reader.readAsText(file); });
   document.querySelector("#clear-attachment")?.addEventListener("click", () => { state.attachment = null; render(); });
