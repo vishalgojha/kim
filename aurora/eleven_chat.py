@@ -47,12 +47,12 @@ class ElevenTextChat:
         if isinstance(value, str):
             return value if value.strip() else ""
         if isinstance(value, dict):
-            for key in ("agent_response", "text", "content"):
+            for key in ("agent_response_event", "agent_response", "text_response_part", "text", "content"):
                 text = value.get(key)
                 if isinstance(text, str) and text.strip():
                     return text
             for key, nested in value.items():
-                if key in {"audio_base_64", "audio"}:
+                if key in {"type", "event_id", "audio_base_64", "audio", "timestamp"}:
                     continue
                 text = ElevenTextChat._find_text(nested)
                 if text:
@@ -156,6 +156,8 @@ class ElevenTextChat:
                 text = self._part_text(msg)
                 if text:
                     chunks.append(text)
+                    if mtype in {"agent_response", "agent_response_correction"}:
+                        return {"ok": True, "message": "".join(chunks).strip(), "tools_used": tools_used, "tool_results_completed": bool(tools_used)}
                     continue
 
                 if mtype == "agent_response_complete":
