@@ -14,6 +14,7 @@ PANEL_SVC="kim-panel.service"
 PANEL_DEST="$HOME/.config/systemd/user/$PANEL_SVC"
 DESKTOP_SRC="$DIR/systemd/kim.desktop"
 DESKTOP_DEST="$HOME/.local/share/applications/kim.desktop"
+LEGACY_DESKTOP_OVERRIDE="$HOME/.local/share/applications/Kim.desktop"
 ICON_SRC="$DIR/desktop/src-tauri/icons/kim-desktop.svg"
 ICON_DEST="$HOME/.local/share/icons/hicolor/scalable/apps/kim-desktop.svg"
 VOICE_COMMAND="$HOME/.aurora/voice_command"
@@ -27,15 +28,16 @@ case "${1:-}" in
     mkdir -p "$(dirname "$ICON_DEST")"
     cp "$ICON_SRC" "$ICON_DEST"
     mkdir -p "$HOME/.local/share/applications"
-    # Prefer the packaged Tauri launcher when it exists. The legacy lowercase
-    # launcher otherwise creates a second Kim icon in GNOME's app grid.
-    if [ -e "/usr/share/applications/Kim.desktop" ]; then
-      # Remove the old per-user entry that used the mobile/orb icon and
-      # launched the legacy service.sh wrapper.
-      rm -f "$HOME/.local/share/applications/Kim.desktop" "$DESKTOP_DEST"
-    elif [ ! -e "$HOME/.local/share/applications/Kim.desktop" ]; then
-      cp "$DESKTOP_SRC" "$DESKTOP_DEST"
-    fi
+    # Hide the system-level legacy launcher (which can retain the old orb
+    # icon) and expose exactly one user-level Tauri launcher using the K icon.
+    cat > "$LEGACY_DESKTOP_OVERRIDE" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Kim (legacy launcher hidden)
+NoDisplay=true
+Hidden=true
+EOF
+    cp "$DESKTOP_SRC" "$DESKTOP_DEST"
     update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true
     if [ -f "$DIR/systemd/aurora-mic.service" ]; then
       cp "$DIR/systemd/aurora-mic.service" "$HOME/.config/systemd/user/"
