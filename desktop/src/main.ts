@@ -112,6 +112,10 @@ function shell(content: string) {
   document.querySelector("#compact")?.addEventListener("click", () => toggleView(true));
   updateConnection();
   updatePropAIStatus();
+  requestAnimationFrame(() => {
+    const messages = document.querySelector<HTMLElement>("#messages");
+    if (messages) messages.scrollTop = messages.scrollHeight;
+  });
 }
 function nav(page: Page, icon: string, label: string) { return `<button data-page="${page}" class="nav-item ${state.page === page ? "active" : ""}"><b>${icon}</b><span>${label}</span></button>`; }
 function title() { return ({ chat: "What should we do?", browser: "Kim Browser", approvals: "Review requests" }[state.page]); }
