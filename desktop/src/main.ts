@@ -139,7 +139,7 @@ function render() {
   return chat();
 }
 function browser() {
-  shell(`<section class="panel-page browser-page"><div class="intro">Open websites in Kim's own browser window. Your Kim chat stays open while you browse.</div><form id="browser-form" class="browser-form"><input id="browser-url" autocomplete="off" placeholder="https://example.com or search the web" /><button>Open browser</button></form><div class="browser-card"><strong>Browser tools</strong><p>Use the browser window for sign-ins and pages. Ask Kim to open a URL or work with the connected desktop when you need automation.</p></div></section>`);
+  shell(`<section class="panel-page browser-page"><div class="intro">Open websites in Kim's own browser window. Your Kim chat stays open while you browse.</div><form id="browser-form" class="browser-form"><input id="browser-url" autocomplete="off" placeholder="https://example.com or search the web" /><button>Open browser</button></form><div class="browser-card"><strong>Browser actions</strong><p>Ask Kim to navigate, click, type, press keys, scroll, read pages, or capture a screenshot in the active browser.</p></div></section>`);
   document.querySelector<HTMLFormElement>("#browser-form")!.onsubmit = (event) => {
     event.preventDefault();
     const input = document.querySelector<HTMLInputElement>("#browser-url")!;

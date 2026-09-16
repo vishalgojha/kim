@@ -66,6 +66,51 @@ async def navigate_browser(url: str) -> str:
 
 
 @tool(
+    "browser_action",
+    "Control the currently visible Chrome, Chromium, Firefox, or Brave window. Use action click with x/y, type with text, key with a key name, or scroll with amount. This operates the user's visible browser window.",
+    {
+        "action": {"type": "string", "description": "click, type, key, or scroll", "required": True},
+        "x": {"type": "integer", "description": "screen x coordinate for click", "required": False},
+        "y": {"type": "integer", "description": "screen y coordinate for click", "required": False},
+        "text": {"type": "string", "description": "text to type", "required": False},
+        "key": {"type": "string", "description": "key or hotkey, for example Return, Escape, ctrl+l", "required": False},
+        "amount": {"type": "integer", "description": "scroll amount; positive up, negative down", "required": False},
+    },
+    timeout=20,
+)
+async def browser_action(action: str, x: int = 0, y: int = 0, text: str = "", key: str = "", amount: int = 0) -> str:
+    xdotool = shutil.which("xdotool")
+    if not xdotool:
+        return "browser actions require xdotool on the desktop"
+    action = action.strip().lower()
+    if action == "click":
+        if x < 0 or y < 0:
+            return "click requires non-negative x and y coordinates"
+        args = [xdotool, "mousemove", "--sync", str(x), str(y), "click", "1"]
+    elif action == "type":
+        if not text:
+            return "type requires text"
+        args = [xdotool, "type", "--clearmodifiers", "--delay", "1", text[:4000]]
+    elif action == "key":
+        if not key:
+            return "key requires a key name"
+        args = [xdotool, "key", "--clearmodifiers", key]
+    elif action == "scroll":
+        button = 4 if amount > 0 else 5
+        args = [xdotool, "click", "--repeat", str(min(abs(amount), 20) or 1), str(button)]
+    else:
+        return "browser_action supports click, type, key, or scroll"
+    try:
+        proc = await asyncio.create_subprocess_exec(*args, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
+        _, err = await asyncio.wait_for(proc.communicate(), timeout=8)
+        if proc.returncode:
+            return f"browser action failed: {err.decode(errors='replace').strip()[:300]}"
+        return f"browser {action} completed"
+    except asyncio.TimeoutError:
+        return "browser action timed out"
+
+
+@tool(
     "launch_app",
     "Open an application or open a file/URL with its default handler. Supports common names (browser, editor, terminal, spotify...) or any program found on PATH, and falls back to xdg-open.",
     {

@@ -17,7 +17,7 @@ DIRECT_TOOLS = {
 }
 
 WRITE_TOOLS = {
-    "gmail_send", "calendar_create", "whatsapp_send", "type_text", "press_key",
+    "gmail_send", "calendar_create", "whatsapp_send", "type_text", "press_key", "browser_action",
     "clipboard_set", "volume_set", "run_shell", "start_task",
     "cancel_task", "schedule_remind", "schedule_every", "schedule_cancel",
     "file_write", "file_edit", "file_delete", "knowledge_ingest", "opencode_run",
