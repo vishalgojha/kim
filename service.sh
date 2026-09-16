@@ -18,7 +18,7 @@ LEGACY_DESKTOP_OVERRIDE="$HOME/.local/share/applications/Kim.desktop"
 ICON_SRC="$DIR/desktop/src-tauri/icons/kim-desktop.svg"
 ICON_DEST="$HOME/.local/share/icons/hicolor/scalable/apps/kim-desktop.svg"
 VOICE_COMMAND="$HOME/.aurora/voice_command"
-APP_BIN="$DIR/desktop/src-tauri/target/debug/kim-desktop"
+APP_BIN="/usr/bin/kim-desktop"
 
 case "${1:-}" in
   install)
@@ -79,8 +79,8 @@ EOF
     $0 start
     if [ -x "$APP_BIN" ]; then
       nohup "$APP_BIN" >/dev/null 2>&1 &
-    elif command -v kim-desktop >/dev/null 2>&1; then
-      nohup kim-desktop >/dev/null 2>&1 &
+    elif [ -x "$DIR/desktop/src-tauri/target/release/kim-desktop" ]; then
+      nohup "$DIR/desktop/src-tauri/target/release/kim-desktop" >/dev/null 2>&1 &
     else
       echo "Kim desktop app is not built. Run: cd desktop && npm run tauri build -- --debug"
       exit 1
