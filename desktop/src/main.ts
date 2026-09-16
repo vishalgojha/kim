@@ -20,9 +20,20 @@ const state = {
   compact: localStorage.getItem("kim.view") !== "full",
   base: configVersion === "2" && savedServer && !pointsToLocalMachine ? savedServer : DEFAULT_SERVER,
   pin: localStorage.getItem("kim.pin") || "",
-  messages: [] as { role: string; text: string }[],
+  activeUser: localStorage.getItem("kim.user") || "Vishal",
+  conversationId: localStorage.getItem(`kim.conversation.${localStorage.getItem("kim.user") || "Vishal"}`) || crypto.randomUUID(),
+  messages: [] as { role: string; text: string; attachmentName?: string }[],
+  attachment: null as { name: string; text: string } | null,
   voice: "online",
 };
+localStorage.setItem(`kim.conversation.${state.activeUser}`, state.conversationId);
+const historyKey = () => `kim.history.${state.activeUser}`;
+const loadMessages = () => { try { return JSON.parse(localStorage.getItem(historyKey()) || "{}")[state.conversationId] || []; } catch { return []; } };
+const saveMessage = (message: { role: string; text: string; attachmentName?: string }) => {
+  state.messages.push(message);
+  try { const all = JSON.parse(localStorage.getItem(historyKey()) || "{}"); all[state.conversationId] = state.messages.slice(-100); localStorage.setItem(historyKey(), JSON.stringify(all)); } catch { /* best effort */ }
+};
+state.messages = loadMessages();
 
 const esc = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[c]!));
 const api = async (path: string, init: RequestInit = {}) => {
@@ -84,13 +95,15 @@ function shell(content: string) {
     <aside class="rail">
       <div class="brand"><span class="mark"><i></i><i></i></span><span>Kim</span></div>
       <div class="eyebrow">PERSONAL AGENT</div>
-      <nav>${nav("chat", "⌁", "Talk to Kim")}${nav("browser", "◉", "Browser")}${nav("approvals", "✓", "Approvals")}</nav>
+      <nav>${nav("chat", "⌁", "Talk to Kim")}${nav("browser", "◉", "Browser")}${nav("approvals", "✓", "Approvals")}</nav><button id="new-chat" class="rail-action">＋ <span>New chat</span></button>
       <div class="rail-bottom"><button id="propai-connect" class="rail-action">◈ <span>Checking PropAI…</span></button><button id="settings" class="rail-action">⚙ <span>Settings</span></button><div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-label">Checking laptop relay…</span></div></div>
     </aside>
-    <main class="main"><header><div><div class="kicker">KIM WORKSPACE</div><h1>${title()}</h1></div><div class="header-actions"><span class="pill"><span class="dot"></span> Online</span><button id="compact" class="icon-button" title="Collapse">▾</button><button id="refresh" class="icon-button" title="Refresh">↻</button></div></header>${content}</main>
+    <main class="main"><header><div><div class="kicker">KIM WORKSPACE</div><h1>${title()}</h1></div><div class="header-actions"><button id="user-switch" class="user-switch">${esc(state.activeUser)}</button><span class="pill"><span class="dot"></span> Online</span><button id="compact" class="icon-button" title="Collapse">▾</button><button id="refresh" class="icon-button" title="Refresh">↻</button></div></header>${content}</main>
   </div>`;
   document.querySelectorAll<HTMLElement>("[data-page]").forEach((el) => el.onclick = () => { state.page = el.dataset.page as Page; render(); });
   document.querySelector("#settings")?.addEventListener("click", settings);
+  document.querySelector("#new-chat")?.addEventListener("click", () => { state.conversationId = crypto.randomUUID(); localStorage.setItem(`kim.conversation.${state.activeUser}`, state.conversationId); state.messages = []; state.attachment = null; state.page = "chat"; render(); });
+  document.querySelector("#user-switch")?.addEventListener("click", () => { state.activeUser = state.activeUser === "Vishal" ? "Kapil" : "Vishal"; localStorage.setItem("kim.user", state.activeUser); state.conversationId = localStorage.getItem(`kim.conversation.${state.activeUser}`) || crypto.randomUUID(); localStorage.setItem(`kim.conversation.${state.activeUser}`, state.conversationId); state.messages = loadMessages(); render(); });
   document.querySelector("#propai-connect")?.addEventListener("click", connectPropAI);
   document.querySelector("#compact")?.addEventListener("click", () => toggleView(true));
   updateConnection();
@@ -134,8 +147,11 @@ function browser() {
   };
 }
 function chat() {
-  shell(`<section class="chat-page"><div class="hero-orb"><span class="orb"><i></i><i></i></span><div><strong>Kim is ready</strong><small>Ask Kim to act on your laptop, phone, or connected services.</small></div></div><div id="messages" class="messages">${state.messages.length ? state.messages.map((m) => `<article class="message ${m.role}"><small>${m.role === "user" ? "YOU" : "KIM"}</small><p>${esc(m.text)}</p></article>`).join("") : `<div class="empty"><span class="spark">✦</span><p>Your workspace is quiet.</p><small>Ask Kim to open an app, manage a task, or work with a connected service.</small></div>`}</div><form id="chat-form" class="composer"><input id="chat-input" autocomplete="off" placeholder="Ask Kim anything…" /><button>↑</button></form><div class="suggestions"><button data-prompt="Prepare my day">Prepare my day</button><button data-prompt="Show my calendar">Show my calendar</button></div></section>`);
-  document.querySelector<HTMLFormElement>("#chat-form")!.onsubmit = async (e) => { e.preventDefault(); const input = document.querySelector<HTMLInputElement>("#chat-input")!; const text = input.value.trim(); if (!text) return; input.value = ""; state.messages.push({ role: "user", text }); render(); try { const out = await api("/v1/chat", { method: "POST", body: JSON.stringify({ message: text }) }); state.messages.push({ role: "assistant", text: out.reply || out.message || JSON.stringify(out) }); } catch (error) { state.messages.push({ role: "assistant", text: `I couldn't complete that: ${(error as Error).message}` }); } render(); };
+  shell(`<section class="chat-page"><div class="hero-orb"><span class="orb"><i></i><i></i></span><div><strong>Kim is ready</strong><small>Ask Kim to act on your laptop, phone, or connected services.</small></div></div><div id="messages" class="messages">${state.messages.length ? state.messages.map((m) => `<article class="message ${m.role}"><small>${m.role === "user" ? "YOU" : "KIM"}</small><p>${esc(m.text)}</p>${m.attachmentName ? `<small>Attached: ${esc(m.attachmentName)}</small>` : ""}</article>`).join("") : `<div class="empty"><span class="spark">✦</span><p>Your workspace is quiet.</p><small>Ask Kim anything, attach a file, or use a connected device.</small></div>`}</div>${state.attachment ? `<div class="attachment-chip">Attached: ${esc(state.attachment.name)} <button type="button" id="clear-attachment">×</button></div>` : ""}<form id="chat-form" class="composer"><button type="button" id="attach" class="composer-icon">＋</button><input id="chat-input" autocomplete="off" placeholder="Message Kim…" /><button type="button" id="mic" class="composer-icon">♩</button><button type="submit">↑</button></form><input id="file-picker" type="file" hidden /><div class="suggestions"><button data-prompt="Prepare my day">Prepare my day</button><button data-prompt="Show my calendar">Show my calendar</button></div></section>`);
+  document.querySelector<HTMLFormElement>("#chat-form")!.onsubmit = async (e) => { e.preventDefault(); const input = document.querySelector<HTMLInputElement>("#chat-input")!; const text = input.value.trim(); if (!text || !state.pin) return; input.value = ""; const attachment = state.attachment; state.attachment = null; saveMessage({ role: "user", text, attachmentName: attachment?.name }); render(); try { const out = await api("/v1/chat", { method: "POST", body: JSON.stringify({ message: text, conversation_id: state.conversationId, client: "desktop", device_context: "Linux desktop with browser, apps, files, and connected laptop relay", attachments: attachment ? [{ name: attachment.name, text: attachment.text }] : [] }) }); saveMessage({ role: "assistant", text: out.reply || out.message || JSON.stringify(out) }); } catch (error) { saveMessage({ role: "assistant", text: `I couldn't complete that: ${(error as Error).message}` }); } render(); };
+  document.querySelector("#attach")?.addEventListener("click", () => document.querySelector<HTMLInputElement>("#file-picker")?.click());
+  document.querySelector<HTMLInputElement>("#file-picker")?.addEventListener("change", (event) => { const file = (event.target as HTMLInputElement).files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { state.attachment = { name: file.name, text: String(reader.result || "").slice(0, 120000) }; render(); }; reader.readAsText(file); });
+  document.querySelector("#clear-attachment")?.addEventListener("click", () => { state.attachment = null; render(); });
   document.querySelectorAll<HTMLButtonElement>("[data-prompt]").forEach((b) => b.onclick = () => { document.querySelector<HTMLInputElement>("#chat-input")!.value = b.dataset.prompt!; document.querySelector<HTMLFormElement>("#chat-form")!.requestSubmit(); });
 }
 function research() {

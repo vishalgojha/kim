@@ -31,3 +31,8 @@ nav { display:grid; gap:4px; }.nav-item, .rail-action { border:0; border-radius:
 .mini-copy span { color:#8f96a2; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .mini-control { width:34px; height:34px; border-radius:10px; background:#171a20; color:#d7dbe2; border:1px solid #292d34; }
 .mini-control:hover { background:#22262e; color:#fff; }
+.user-switch { border:1px solid #292d34; background:#121419; color:#cbd0d8; border-radius:999px; padding:8px 12px; cursor:pointer; }
+.composer { align-items:center; gap:3px; }
+.composer .composer-icon { background:transparent; color:#aeb4bd; }
+.attachment-chip { margin-top:10px; color:#bfc5cf; font-size:12px; }
+.attachment-chip button { border:0; background:transparent; color:#ff9b9b; cursor:pointer; }
