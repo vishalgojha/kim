@@ -6,6 +6,7 @@ import asyncio
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -27,20 +28,83 @@ def _ran(cmd: List[str]) -> Tuple[int, str]:
         return 124, f"timed out: {' '.join(cmd)}"
 
 
+_PORTAL_SCRIPT = r"""
+import asyncio
+from dbus_next import Message, Variant
+from dbus_next.aio import MessageBus
+from dbus_next.constants import BusType, MessageType
+
+
+async def _main():
+    bus = await MessageBus(bus_type=BusType.SESSION).connect()
+    reply = await bus.call(Message(
+        destination="org.freedesktop.portal.Desktop",
+        path="/org/freedesktop/portal/desktop",
+        interface="org.freedesktop.portal.Screenshot",
+        member="Screenshot", signature="sa{sv}",
+        body=["", {"interactive": Variant("b", False)}]))
+    if reply.message_type == MessageType.ERROR:
+        print("portal error: " + str(reply.body[0]))
+        return
+    handle = reply.body[0]
+    fut = asyncio.get_running_loop().create_future()
+    loop = asyncio.get_running_loop()
+    bus.add_message_handler(lambda m: fut.set_result(m) if (m.message_type == MessageType.SIGNAL and m.member == "Response" and not fut.done()) else None)
+    try:
+        msg = await asyncio.wait_for(fut, timeout=8)
+    except asyncio.TimeoutError:
+        print("portal timeout")
+        return
+    resp, results = msg.body
+    uri = results.get("uri")
+    if isinstance(uri, Variant):
+        uri = uri.value
+    if resp == 0 and uri:
+        print(str(uri)[len("file://"):] if str(uri).startswith("file://") else str(uri))
+    else:
+        print("portal declined screenshot")
+
+
+asyncio.run(_main())
+"""
+
+
+def _portal_capture() -> Tuple[bool, str]:
+    try:
+        import dbus_next  # noqa: F401
+    except ImportError:
+        return False, ""
+    rc, out = _ran([sys.executable, "-c", _PORTAL_SCRIPT])
+    if rc != 0 or not (out or "").strip():
+        return False, out[:500]
+    p = Path(out.strip())
+    if p.exists() and p.stat().st_size > 0:
+        return True, str(p)
+    return False, f"portal capture produced no file: {p}"
+
+
 def _capture(path: str) -> Tuple[bool, str]:
+    target = Path(path).expanduser()
+    ok, uri = _portal_capture()
+    if ok:
+        try:
+            target.write_bytes(Path(uri).read_bytes())
+            return True, "saved screenshot: " + str(target)
+        except OSError as exc:
+            return False, f"could not save portal screenshot: {exc}"
     strategies = [
         ["gdbus", "call", "--session", "--dest", "org.gnome.Shell", "--object-path",
          "/org/gnome/Shell/Screenshot", "--method", "org.gnome.Shell.Screenshot.Screenshot",
-         "true", "false", str(Path(path).expanduser().resolve())],
-        ["gnome-screenshot", "-f", str(Path(path).expanduser().resolve())],
-        ["grim", str(Path(path).expanduser().resolve())],
-        ["scrot", str(Path(path).expanduser().resolve())],
-        ["import", "-window", "root", str(Path(path).expanduser().resolve())],
+         "true", "false", str(target.resolve())],
+        ["gnome-screenshot", "-f", str(target.resolve())],
+        ["grim", str(target.resolve())],
+        ["scrot", str(target.resolve())],
+        ["import", "-window", "root", str(target.resolve())],
     ]
     for cmd in strategies:
         if shutil.which(cmd[0]):
             rc, out = _ran(cmd)
-            p = Path(path).expanduser()
+            p = target
             if rc == 0 and p.exists() and p.stat().st_size > 0:
                 return True, "saved screenshot: " + str(p)
             if rc != 0 and cmd[0] == "gdbus":
@@ -49,7 +113,7 @@ def _capture(path: str) -> Tuple[bool, str]:
                     p = Path(gb.group(1))
                     if p.exists() and p.stat().st_size > 0:
                         return True, "saved screenshot: " + str(p)
-    return False, "could not capture the screen (need gnome-screenshot/grim/scrot/imagemagick or the GNOME Shell screenshot bus)"
+    return False, "could not capture the screen (Wayland portal or gnome-screenshot/grim/scrot/imagemagick required)"
 
 
 def _ocr(path: str) -> Tuple[bool, str, List[Dict[str, Any]]]:
