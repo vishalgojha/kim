@@ -423,7 +423,7 @@ async def _computer_action_windows(a: str, x: int, y: int, dx: int, dy: int, but
         ok, res = _win_window_move(ref, x, y, width, height)
         return res if not ok else f"moved window {ref} to ({x},{y})" + (f" size {width}x{height}" if width and height else "")
 
-    return f"unsupported computer_action: {action}"
+    return f"unsupported computer_action: {a}"
 
 
 @tool(
