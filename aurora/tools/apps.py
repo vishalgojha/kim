@@ -34,13 +34,7 @@ ALIASES = {
 }
 
 
-@tool(
-    "navigate_browser",
-    "Navigate the currently open Chrome, Chromium, Firefox, or Brave window in its active tab. Use this for URLs unless the user explicitly asks for a new window or tab.",
-    {"url": {"type": "string", "description": "HTTP or HTTPS URL", "required": True}},
-    timeout=15,
-)
-async def navigate_browser(url: str) -> str:
+async def _navigate_browser_impl(url: str) -> str:
     target = url.strip()
     if len(target) > 2_000 or not target.startswith(("http://", "https://")):
         return "only http:// and https:// URLs are supported"
@@ -68,20 +62,7 @@ async def navigate_browser(url: str) -> str:
     return "no open browser window was found; opened the URL with the default browser"
 
 
-@tool(
-    "browser_action",
-    "Control the currently visible Chrome, Chromium, Firefox, or Brave window. Use action click with x/y, type with text, key with a key name, or scroll with amount. This operates the user's visible browser window.",
-    {
-        "action": {"type": "string", "description": "click, type, key, or scroll", "required": True},
-        "x": {"type": "integer", "description": "screen x coordinate for click", "required": False},
-        "y": {"type": "integer", "description": "screen y coordinate for click", "required": False},
-        "text": {"type": "string", "description": "text to type", "required": False},
-        "key": {"type": "string", "description": "key or hotkey, for example Return, Escape, ctrl+l", "required": False},
-        "amount": {"type": "integer", "description": "scroll amount; positive up, negative down", "required": False},
-    },
-    timeout=20,
-)
-async def browser_action(action: str, x: int = 0, y: int = 0, text: str = "", key: str = "", amount: int = 0) -> str:
+async def _browser_action_impl(action: str, x: int = 0, y: int = 0, text: str = "", key: str = "", amount: int = 0) -> str:
     if IS_WINDOWS:
         return await _browser_action_windows(action, x, y, text, key, amount)
     xdotool = shutil.which("xdotool")
@@ -115,15 +96,7 @@ async def browser_action(action: str, x: int = 0, y: int = 0, text: str = "", ke
         return "browser action timed out"
 
 
-@tool(
-    "launch_app",
-    "Open an application or open a file/URL with its default handler. Supports common names (browser, editor, terminal, spotify...) or any program found on PATH, and falls back to xdg-open.",
-    {
-        "name": {"type": "string", "description": "app name, file path, or URL", "required": True},
-    },
-    timeout=30,
-)
-async def launch_app(name: str) -> str:
+async def _launch_app_impl(name: str) -> str:
     from .win32 import launch as win_launch
     requested = name.strip()
     normalized = requested.lower()
@@ -160,6 +133,62 @@ async def launch_app(name: str) -> str:
     if open_default(target):
         return f"opened {name} with the default handler"
     return f"could not find application '{name}'"
+
+
+@tool(
+    "navigate_browser",
+    "Navigate the currently open Chrome, Chromium, Firefox, or Brave window in its active tab. Use this for URLs unless the user explicitly asks for a new window or tab.",
+    {"url": {"type": "string", "description": "HTTP or HTTPS URL", "required": True}},
+    timeout=15,
+)
+async def navigate_browser(url: str) -> str:
+    result = await _navigate_browser_impl(url)
+    ok = not result.startswith(("only ", "failed"))
+    await _note("navigate_browser", ok, result[:200])
+    return result
+
+
+@tool(
+    "browser_action",
+    "Control the currently visible Chrome, Chromium, Firefox, or Brave window. Use action click with x/y, type with text, key with a key name, or scroll with amount. This operates the user's visible browser window.",
+    {
+        "action": {"type": "string", "description": "click, type, key, or scroll", "required": True},
+        "x": {"type": "integer", "description": "screen x coordinate for click", "required": False},
+        "y": {"type": "integer", "description": "screen y coordinate for click", "required": False},
+        "text": {"type": "string", "description": "text to type", "required": False},
+        "key": {"type": "string", "description": "key or hotkey, for example Return, Escape, ctrl+l", "required": False},
+        "amount": {"type": "integer", "description": "scroll amount; positive up, negative down", "required": False},
+    },
+    timeout=20,
+)
+async def browser_action(action: str, x: int = 0, y: int = 0, text: str = "", key: str = "", amount: int = 0) -> str:
+    result = await _browser_action_impl(action, x, y, text, key, amount)
+    ok = not result.startswith(("browser action failed", "browser_action supports", "click requires", "type requires", "key requires"))
+    await _note("browser_action", ok, result[:200])
+    return result
+
+
+@tool(
+    "launch_app",
+    "Open an application or open a file/URL with its default handler. Supports common names (browser, editor, terminal, spotify...) or any program found on PATH, and falls back to xdg-open.",
+    {
+        "name": {"type": "string", "description": "app name, file path, or URL", "required": True},
+    },
+    timeout=30,
+)
+async def launch_app(name: str) -> str:
+    result = await _launch_app_impl(name)
+    ok = not result.startswith(("could not", "failed"))
+    await _note("launch_app", ok, result[:200])
+    return result
+
+
+async def _note(name: str, ok: bool, summary: str) -> None:
+    from .tasks import record_action
+    try:
+        await record_action(name, ok, summary)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 @tool(

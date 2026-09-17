@@ -216,6 +216,11 @@ async def _desktop_device_command_loop(cfg: Dict[str, Any]) -> None:
                             result, is_error = await REGISTRY.run(tool_name, tool_params)
                         else:
                             result, is_error = f"unsupported desktop action: {action}", True
+                        try:
+                            from .tools.tasks import record_action
+                            await record_action(f"device.{action}", not is_error, str(result)[:200])
+                        except Exception:  # noqa: BLE001
+                            pass
                         await client.post(
                             f"{base}/v1/device/commands/{command.get('id', '')}/result",
                             headers=headers,
