@@ -33,6 +33,16 @@ ALIASES = {
     "notes": "gnome-text-editor",
 }
 
+# Generic app kinds that should resolve server-side through a silent fallback
+# chain. If the requested name is not a real binary, launch_app tries each
+# candidate in order and reports the first success; if all are missing it
+# returns a single exhausted outcome naming what IS installed and asking the
+# user for a choice, so the model never narrates try-by-try play-by-play.
+_EDITOR_FALLBACKS = ("gedit", "gnome-text-editor", "kate", "xed", "mousepad", "pluma", "geany", "code", "nano", "vim", "nvim")
+_EDITOR_KEYS = {"notepad", "notepad++", "text editor", "texteditor", "editor", "gedit"}
+_APP_FALLBACKS: dict[str, tuple[str, ...]] = {k: _EDITOR_FALLBACKS for k in _EDITOR_KEYS}
+_APP_KIND_LABEL = {"notepad": "a text editor", "notepad++": "a text editor", "text editor": "a text editor", "texteditor": "a text editor", "editor": "a text editor", "gedit": "gedit or an equivalent text editor"}
+
 
 async def _navigate_browser_impl(url: str) -> str:
     target = url.strip()
@@ -131,6 +141,36 @@ async def _launch_app_impl(name: str) -> str:
             return f"launched {target}"
         except Exception as e:
             return f"failed to launch {target}: {e}"
+    # Silent server-side fallback: resolve generic app kinds to any installed
+    # member (e.g. "notepad" -> gedit/nano/...) and report one final outcome.
+    fallbacks = _APP_FALLBACKS.get(normalized)
+    if fallbacks:
+        for candidate in fallbacks:
+            path = shutil.which(candidate)
+            if not path:
+                continue
+            try:
+                await asyncio.create_subprocess_exec(
+                    path,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+                return f"launched {candidate} (resolved {requested} to an installed text editor)"
+            except Exception as e:
+                return f"failed to launch {candidate}: {e}"
+        installed = sorted({c for c in fallbacks if shutil.which(c)})
+        if installed:
+            return (
+                f"could not launch {requested}: no candidate in the text-editor chain started. "
+                f"Editors detected on this system: {', '.join(installed)}. "
+                "Ask the user which one to open instead of assuming."
+            )
+        return (
+            f"could not launch {requested}: wanted {_APP_KIND_LABEL.get(normalized, 'a text editor')} "
+            "but none of gedit/kate/xed/geany/code/nano/vim is installed. "
+            "Recommend installing one (e.g. 'sudo apt install gedit') or ask the user for an app name."
+        )
     # xdg-open / the default handler cannot confirm anything fired; only use
     # them for URLs or existing files, never for a guessed app name.
     looks_like_url = target.startswith(("http://", "https://", "www."))
