@@ -171,7 +171,7 @@ async def computer_action(action: str = "", x: int = 0, y: int = 0, dx: int = 0,
                           width: int = 0, height: int = 0) -> str:
     a = (action or "").strip().lower()
     if not a:
-        return "computer_action needs an action: move, click, dblclick, drag, scroll, type, key, window_list, window_activate, window_move, see, describe, ocr, click_label"
+        return "ERROR: computer_action needs an action: move, click, dblclick, drag, scroll, type, key, window_list, window_activate, window_move, see, describe, ocr, click_label"
 
     if IS_WINDOWS:
         return await _computer_action_windows(a, x, y, dx, dy, button, text, key, title, window, amount, delay_ms, width, height)
@@ -212,7 +212,7 @@ async def computer_action(action: str = "", x: int = 0, y: int = 0, dx: int = 0,
 
     if a == "click_label":
         if not text.strip():
-            return "click_label needs the on-screen text to click (text=...)"
+            return "ERROR: click_label needs the on-screen text to click (text=...)"
         with tempfile.TemporaryDirectory() as tmp:
             png = str(Path(tmp) / "kim_screen.png")
             ok, cap = _capture(png)
@@ -295,7 +295,7 @@ async def computer_action(action: str = "", x: int = 0, y: int = 0, dx: int = 0,
     if a == "window_activate":
         target = title or window or ""
         if not target:
-            return "window_activate needs title= or window=<id>"
+            return "ERROR: window_activate needs title= or window=<id>"
         if target.isdigit():
             return _input(["windowactivate", "--sync", target])[1] if (_input(["windowactivate", "--sync", target])[0]) else _input(["windowactivate", target])[1]
         rc, out = _ran(["xdotool", "search", "--onlyvisible", "--name", target])
@@ -308,7 +308,7 @@ async def computer_action(action: str = "", x: int = 0, y: int = 0, dx: int = 0,
     if a == "window_move":
         target = window or title or ""
         if not target:
-            return "window_move needs window=<id> and x, y"
+            return "ERROR: window_move needs window=<id> and x, y"
         if not target.isdigit():
             rc, out = _ran(["xdotool", "search", "--name", target])
             if rc == 0 and (out or "").strip():
@@ -360,7 +360,7 @@ async def _computer_action_windows(a: str, x: int, y: int, dx: int, dy: int, but
 
     if a == "click_label":
         if not text.strip():
-            return "click_label needs the on-screen text to click (text=...)"
+            return "ERROR: click_label needs the on-screen text to click (text=...)"
         with tempfile.TemporaryDirectory() as tmp:
             png = str(Path(tmp) / "kim_screen.png")
             ok, cap = _win_grab(png)
@@ -412,14 +412,14 @@ async def _computer_action_windows(a: str, x: int, y: int, dx: int, dy: int, but
     if a == "window_activate":
         ref = title or window or ""
         if not ref:
-            return "window_activate needs title= or window=<id>"
+            return "ERROR: window_activate needs title= or window=<id>"
         ok, res = _win_window_activate(ref)
         return res if ok else "failed to activate: " + res
 
     if a == "window_move":
         ref = window or title or ""
         if not ref:
-            return "window_move needs window=<id> and x, y"
+            return "ERROR: window_move needs window=<id> and x, y"
         ok, res = _win_window_move(ref, x, y, width, height)
         return res if not ok else f"moved window {ref} to ({x},{y})" + (f" size {width}x{height}" if width and height else "")
 

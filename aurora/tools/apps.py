@@ -81,15 +81,15 @@ async def _browser_action_impl(action: str, x: int = 0, y: int = 0, text: str = 
     action = action.strip().lower()
     if action == "click":
         if x < 0 or y < 0:
-            return "click requires non-negative x and y coordinates"
+            return "ERROR: click requires non-negative x and y coordinates"
         args = [xdotool, "mousemove", "--sync", str(x), str(y), "click", "1"]
     elif action == "type":
         if not text:
-            return "type requires text"
+            return "ERROR: type requires text"
         args = [xdotool, "type", "--clearmodifiers", "--delay", "1", text[:4000]]
     elif action == "key":
         if not key:
-            return "key requires a key name"
+            return "ERROR: key requires a key name"
         args = [xdotool, "key", "--clearmodifiers", key]
     elif action == "scroll":
         button = 4 if amount > 0 else 5
@@ -199,7 +199,7 @@ async def _launch_app_impl(name: str) -> str:
 )
 async def navigate_browser(url: str) -> str:
     result = await _navigate_browser_impl(url)
-    ok = not result.startswith(("only ", "failed"))
+    ok = not result.startswith(("ERROR:", "only ", "failed"))
     await _note("navigate_browser", ok, result[:200])
     return result
 
@@ -219,7 +219,7 @@ async def navigate_browser(url: str) -> str:
 )
 async def browser_action(action: str, x: int = 0, y: int = 0, text: str = "", key: str = "", amount: int = 0) -> str:
     result = await _browser_action_impl(action, x, y, text, key, amount)
-    ok = not result.startswith(("browser action failed", "browser_action supports", "click requires", "type requires", "key requires"))
+    ok = not result.startswith(("ERROR:", "browser action failed", "browser_action supports", "click requires", "type requires", "key requires"))
     await _note("browser_action", ok, result[:200])
     return result
 
@@ -234,7 +234,7 @@ async def browser_action(action: str, x: int = 0, y: int = 0, text: str = "", ke
 )
 async def launch_app(name: str) -> str:
     result = await _launch_app_impl(name)
-    ok = not result.startswith(("could not", "failed"))
+    ok = not result.startswith(("ERROR:", "could not", "failed"))
     await _note("launch_app", ok, result[:200])
     return result
 
@@ -285,17 +285,17 @@ async def _browser_action_windows(action: str, x: int, y: int, text: str, key: s
     action = action.strip().lower()
     if action == "click":
         if x < 0 or y < 0:
-            return "click requires non-negative x and y coordinates"
+            return "ERROR: click requires non-negative x and y coordinates"
         ok, msg = await _run_sync(win32.click, x, y, 1, "1", 50)
         return msg if ok else "browser action failed: " + msg
     if action == "type":
         if not text:
-            return "type requires text"
+            return "ERROR: type requires text"
         ok, msg = await _run_sync(win32.type_text, text[:4000])
         return msg if ok else "browser action failed: " + msg
     if action == "key":
         if not key:
-            return "key requires a key name"
+            return "ERROR: key requires a key name"
         ok, msg = await _run_sync(win32.key, key)
         return msg if ok else "browser action failed: " + msg
     if action == "scroll":

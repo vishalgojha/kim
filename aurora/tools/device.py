@@ -18,6 +18,8 @@ from .registry import tool
         "name": {"type": "string", "description": "For open_app: the app to launch (Chrome, Firefox, files, editor...). Convenience alias for parameters.name.", "required": False},
         "url": {"type": "string", "description": "For open_url: the URL to open in the browser. Convenience alias for parameters.url.", "required": False},
         "app_name": {"type": "string", "description": "Alternate alias for name in open_app. Convenience alias for parameters.name.", "required": False},
+        "text": {"type": "string", "description": "For type_text or browser_action/computer_action: the text to type. Convenience alias for parameters.text.", "required": False},
+        "key": {"type": "string", "description": "For press_key or browser_action/computer_action: the key to press. Convenience alias for parameters.key.", "required": False},
     },
     timeout=40,
 )
@@ -28,6 +30,8 @@ async def device_command(
     name: str | None = None,
     url: str | None = None,
     app_name: str | None = None,
+    text: str | None = None,
+    key: str | None = None,
 ) -> str:
     queue = get_ctx().get("queue_device_command")
     if queue is None:
@@ -39,4 +43,15 @@ async def device_command(
         params.setdefault("name", alias_name)
     if url and action == "open_url":
         params.setdefault("url", url)
+    payload_aliases = {
+        "type_text": ("text", text or params.get("text")),
+        "press_key": ("key", key or params.get("key")),
+    }
+    for act, (param_key, value) in payload_aliases.items():
+        if act == action and value:
+            params.setdefault(param_key, value)
+    if text and action in ("browser_action", "computer_action"):
+        params.setdefault("text", text)
+    if key and action in ("browser_action", "computer_action"):
+        params.setdefault("key", key)
     return await queue(action, device_id.strip() or "laptop", params)
