@@ -14,7 +14,7 @@ from .registry import tool
     {
         "device_id": {"type": "string", "description": "target device, normally 'laptop'", "required": False},
         "action": {"type": "string", "description": "open_app, open_url, browser_action, computer_action, type_text, press_key, screenshot, or playwright_run", "required": True},
-        "parameters": {"type": "object", "description": "Action parameters; for open_app use name, for open_url use url, for browser_action use action/x/y/text/key/amount, for computer_action use action/x/y/dx/dy/button/text/key/title/window/amount/width/height", "required": False},
+        "parameters": {"type": "object", "description": "Action parameters: for open_app use name, for open_url use url, for type_text use text, for press_key use key, for screenshot use path, for browser_action use action/x/y/text/key/amount, for computer_action use action/x/y/dx/dy/button/text/key/title/window/amount/width/height", "required": False},
         "name": {"type": "string", "description": "For open_app: the app to launch (Chrome, Firefox, files, editor...). Convenience alias for parameters.name.", "required": False},
         "url": {"type": "string", "description": "For open_url: the URL to open in the browser. Convenience alias for parameters.url.", "required": False},
         "app_name": {"type": "string", "description": "Alternate alias for name in open_app. Convenience alias for parameters.name.", "required": False},
