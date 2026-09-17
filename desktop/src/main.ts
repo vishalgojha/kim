@@ -1,11 +1,34 @@
-import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import "./styles.css";
 
 type Page = "chat" | "browser" | "approvals";
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const DEFAULT_SERVER = "https://app.vishalojha.me";
-const win = getCurrentWindow();
+
+const isTauri = () => typeof (window as any).__TAURI_INTERNALS__ !== "undefined" || typeof (window as any).__TAURI__ !== "undefined";
+type TauriWindow = { win: any };
+let tauriWin: TauriWindow | null = null;
+let LogicalSizeCtor: any = null;
+async function getTauri(): Promise<TauriWindow | null> {
+  if (!isTauri()) return null;
+  if (tauriWin) return tauriWin;
+  try {
+    const wm = await import("@tauri-apps/api/window");
+    LogicalSizeCtor = wm.LogicalSize;
+    tauriWin = { win: wm.getCurrentWindow() };
+  } catch {
+    tauriWin = null;
+    LogicalSizeCtor = null;
+  }
+  return tauriWin;
+}
+
+const native = (window as any).KimNative;
+const nativeMic = () => native && typeof native.mic === "function";
+(window as any).__kimSetTranscript = (text: string) => {
+  const input = document.querySelector<HTMLInputElement>("#chat-input");
+  if (input) { input.value = text; input.focus(); }
+};
+const originBase = isTauri() ? DEFAULT_SERVER : location.origin && /^https?:\/\//.test(location.origin) ? location.origin : DEFAULT_SERVER;
 const savedServer = localStorage.getItem("kim.server") || "";
 const configVersion = localStorage.getItem("kim.server.version");
 const pointsToLocalMachine = /^(https?:\/\/)?(127\.0\.0\.1|localhost)(:\d+)?$/i.test(savedServer.replace(/\/$/, ""));
@@ -15,18 +38,32 @@ if (configVersion !== "2") {
   localStorage.removeItem("kim.server");
   localStorage.setItem("kim.server.version", "2");
 }
-const state = {
-  page: "chat" as Page,
-  compact: localStorage.getItem("kim.view") !== "full",
-  base: configVersion === "2" && savedServer && !pointsToLocalMachine ? savedServer : DEFAULT_SERVER,
-  pin: localStorage.getItem("kim.pin") || "",
-  activeUser: localStorage.getItem("kim.user") || "Vishal",
-  conversationId: localStorage.getItem(`kim.conversation.${localStorage.getItem("kim.user") || "Vishal"}`) || crypto.randomUUID(),
-  messages: [] as { role: string; text: string; attachmentName?: string; toolsUsed?: string[] }[],
-  attachment: null as { name: string; text: string } | null,
-  pending: "" as string,
-  voice: "online",
-};
+const state = (() => {
+  const st = {
+    page: "chat" as Page,
+    compact: localStorage.getItem("kim.view") !== "full",
+    base: (configVersion === "2" && savedServer && !pointsToLocalMachine ? savedServer : originBase),
+    pin: localStorage.getItem("kim.pin") || "",
+    activeUser: "Vishal",
+    conversationId: "",
+    messages: [] as { role: string; text: string; attachmentName?: string; toolsUsed?: string[] }[],
+    attachment: null as { name: string; text: string } | null,
+    pending: "" as string,
+    voice: "online",
+    panelOpen: localStorage.getItem("kim.panel") !== "closed",
+  };
+  // The WebView bridge passes the stored key and active user up front on mobile.
+  if (native && typeof native.getPin === "function") {
+    try { const stored = String(native.getPin() || ""); if (stored) st.pin = stored; } catch { /* ignore */ }
+  }
+  // The WebView bridge passes the active user up front on mobile.
+  if (native && typeof native.getUser === "function") {
+    try { st.activeUser = String(native.getUser() || "Vishal"); } catch { /* ignore */ }
+  }
+  st.activeUser = localStorage.getItem("kim.user") || st.activeUser || "Vishal";
+  st.conversationId = localStorage.getItem(`kim.conversation.${st.activeUser}`) || crypto.randomUUID();
+  return st;
+})();
 localStorage.setItem(`kim.conversation.${state.activeUser}`, state.conversationId);
 const historyKey = () => `kim.history.${state.activeUser}`;
 const loadMessages = () => { try { return JSON.parse(localStorage.getItem(historyKey()) || "{}")[state.conversationId] || []; } catch { return []; } };
@@ -48,14 +85,31 @@ const api = async (path: string, init: RequestInit = {}) => {
   return data;
 };
 
+async function openExternal(url: string, title: string, width = 900, height = 760) {
+  const t = await getTauri();
+  if (t) {
+    try {
+      const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+      const w = new WebviewWindow(`kim-${Date.now()}`, { url, title, width, height, resizable: true });
+      w.once("tauri://error", (event) => alert(`Window could not open: ${String((event as any).payload)}`));
+      return;
+    } catch {
+      // fall through to a plain browser tab
+    }
+  }
+  window.open(url, "_blank", `noopener,width=${width},height=${height}`);
+}
+
 const resizeWindow = async () => {
+  const t = await getTauri();
+  if (!t) return;
   try {
     if (state.compact) {
-      await win.setMinSize(new LogicalSize(360, 118));
-      await win.setSize(new LogicalSize(420, 148));
+      await t.win.setMinSize(new LogicalSizeCtor(360, 118));
+      await t.win.setSize(new LogicalSizeCtor(420, 148));
     } else {
-      await win.setMinSize(new LogicalSize(900, 600));
-      await win.setSize(new LogicalSize(1180, 760));
+      await t.win.setMinSize(new LogicalSizeCtor(900, 600));
+      await t.win.setSize(new LogicalSizeCtor(1180, 760));
     }
   } catch {
     // Browser preview does not expose Tauri window controls.
@@ -63,16 +117,19 @@ const resizeWindow = async () => {
 };
 
 const syncInitialWindowMode = async () => {
-  try {
-    const size = await win.innerSize();
-    // If the desktop window was maximized or restored large, show the workspace
-    // instead of leaving the compact player floating in a large blank canvas.
-    if (state.compact && size.width > 700) {
-      state.compact = false;
-      localStorage.setItem("kim.view", "full");
+  const t = await getTauri();
+  if (t) {
+    try {
+      const size = await t.win.innerSize();
+      // If the desktop window was maximized or restored large, show the workspace
+      // instead of leaving the compact player floating in a large blank canvas.
+      if (state.compact && size.width > 700) {
+        state.compact = false;
+        localStorage.setItem("kim.view", "full");
+      }
+    } catch {
+      // Browser preview does not expose Tauri window dimensions.
     }
-  } catch {
-    // Browser preview does not expose Tauri window dimensions.
   }
   await resizeWindow();
   render();
@@ -92,14 +149,15 @@ function shell(content: string) {
     mini();
     return;
   }
+  const relayRow = isTauri() ? `<div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-label">Checking laptop relay…</span></div>` : "";
   app.innerHTML = `<div class="shell">
     <aside class="rail">
       <div class="brand"><span class="mark"><i></i><i></i></span><span>Kim</span></div>
       <div class="eyebrow">PERSONAL AGENT</div>
       <nav>${nav("chat", "⌁", "Talk to Kim")}${nav("browser", "◉", "Browser")}${nav("approvals", "✓", "Approvals")}</nav><button id="new-chat" class="rail-action">＋ <span>New chat</span></button>
-      <div class="rail-bottom"><button id="propai-connect" class="rail-action">◈ <span>Checking PropAI…</span></button><button id="settings" class="rail-action">⚙ <span>Settings</span></button><div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-label">Checking laptop relay…</span></div></div>
+      <div class="rail-bottom"><button id="propai-connect" class="rail-action">◈ <span>Checking PropAI…</span></button><button id="settings" class="rail-action">⚙ <span>Settings</span></button>${relayRow}</div>
     </aside>
-    <main class="main"><header><div><div class="kicker">KIM WORKSPACE</div><h1>${title()}</h1></div><div class="header-actions"><button id="user-switch" class="user-switch">${esc(state.activeUser)}</button><span class="pill"><span class="dot"></span> Online</span><button id="compact" class="icon-button" title="Collapse">▾</button><button id="refresh" class="icon-button" title="Refresh">↻</button></div></header>${content}</main>
+    <main class="main"><header><div><div class="kicker">KIM WORKSPACE</div><h1>${title()}</h1></div><div class="header-actions"><button id="user-switch" class="user-switch">${esc(state.activeUser)}</button><span class="pill"><span class="dot"></span> Online</span><button id="panel-toggle" class="icon-button" title="Panels">▤</button><button id="compact" class="icon-button" title="Collapse">▾</button><button id="refresh" class="icon-button" title="Refresh">↻</button></div></header>${content}</main>
   </div>`;
   document.querySelectorAll<HTMLElement>("[data-page]").forEach((el) => el.onclick = () => { state.page = el.dataset.page as Page; render(); });
   document.querySelector("#settings")?.addEventListener("click", settings);
@@ -109,6 +167,7 @@ function shell(content: string) {
     const button = document.querySelector<HTMLButtonElement>("#propai-connect");
     if (button?.dataset.connected === "true") disconnectPropAI(); else connectPropAI();
   });
+  document.querySelector("#panel-toggle")?.addEventListener("click", () => { state.panelOpen = !state.panelOpen; localStorage.setItem("kim.panel", state.panelOpen ? "open" : "closed"); render(); });
   document.querySelector("#compact")?.addEventListener("click", () => toggleView(true));
   updateConnection();
   updatePropAIStatus();
@@ -150,14 +209,16 @@ function browser() {
     const raw = input.value.trim();
     if (!raw) return;
     const url = /^(https?:\/\/)/i.test(raw) ? raw : `https://www.google.com/search?q=${encodeURIComponent(raw)}`;
-    const browserWindow = new WebviewWindow(`kim-browser-${Date.now()}`, { url, title: "Kim Browser", width: 1280, height: 820, resizable: true });
-    browserWindow.once("tauri://error", (event) => alert(`Browser could not open: ${String(event.payload)}`));
+    openExternal(url, "Kim Browser", 1280, 820);
   };
 }
 function chat() {
-  const voiceSupport = typeof (window as any).SpeechRecognition !== "undefined" || typeof (window as any).webkitSpeechRecognition !== "undefined";
-  const renderMessage = (m: { role: string; text: string; attachmentName?: string; toolsUsed?: string[] }) => `<article class="message ${m.role}"><small>${m.role === "user" ? "YOU" : "KIM"}</small><p>${esc(m.text)}</p>${m.toolsUsed?.length ? `<details class="tool-card" open><summary><span class="tool-spark">✦</span> Tool use <span class="tool-count">${m.toolsUsed.length}</span></summary><div class="tool-list">${m.toolsUsed.map((tool) => `<span>${esc(tool)}</span>`).join("")}</div></details>` : ""}${m.attachmentName ? `<small>Attached: ${esc(m.attachmentName)}</small>` : ""}</article>`;
-  shell(`<section class="chat-page"><div class="hero-orb"><span class="orb"><i></i><i></i></span><div><strong>Kim is ready</strong><small>Ask Kim to act on your laptop, phone, or connected services.</small></div></div><div id="messages" class="messages">${state.messages.length ? state.messages.map(renderMessage).join("") : `<div class="empty"><span class="spark">✦</span><p>Your workspace is quiet.</p><small>Ask Kim anything, attach a file, or use a connected device.</small></div>`}${state.pending ? `<div class="agent-status" aria-live="polite"><span class="spinner"></span>${esc(state.pending)}</div>` : ""}</div>${state.attachment ? `<div class="attachment-chip">Attached: ${esc(state.attachment.name)} <button type="button" id="clear-attachment">×</button></div>` : ""}<form id="chat-form" class="composer"><button type="button" id="attach" class="composer-icon">＋</button><input id="chat-input" autocomplete="off" placeholder="Message Kim…" ${state.pending ? "disabled" : ""} />${voiceSupport ? `<button type="button" id="mic" class="composer-icon" ${state.pending ? "disabled" : ""}>♩</button>` : ""}<button type="submit" ${state.pending ? "disabled" : ""}>↑</button></form><input id="file-picker" type="file" hidden /><div class="suggestions"><button data-prompt="Prepare my day">Prepare my day</button><button data-prompt="Show my calendar">Show my calendar</button></div></section>`);
+  const voiceSupport = !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition || nativeMic());
+  const renderMessage = (m: { role: string; text: string; attachmentName?: string; toolsUsed?: string[] }) => {
+    const music = m.role === "assistant" ? m.text.match(/music-[0-9a-f]{8}/)?.[0] : undefined;
+    return `<article class="message ${m.role}"><small>${m.role === "user" ? "YOU" : "KIM"}</small><p>${esc(m.text)}</p>${m.toolsUsed?.length ? `<details class="tool-card" open><summary><span class="tool-spark">✦</span> Tool use <span class="tool-count">${m.toolsUsed.length}</span></summary><div class="tool-list">${m.toolsUsed.map((tool) => `<span>${esc(tool)}</span>`).join("")}</div></details>` : ""}${music ? `<button class="music-download" data-music="${esc(music)}">Download generated music</button>` : ""}${m.attachmentName ? `<small>Attached: ${esc(m.attachmentName)}</small>` : ""}</article>`;
+  };
+  shell(`<div class="chat-wrap"><section class="chat-page"><div class="hero-orb"><span class="orb"><i></i><i></i></span><div><strong>Kim is ready</strong><small>Ask Kim to act on your laptop, phone, or connected services.</small></div></div><div id="messages" class="messages">${state.messages.length ? state.messages.map(renderMessage).join("") : `<div class="empty"><span class="spark">✦</span><p>Your workspace is quiet.</p><small>Ask Kim anything, attach a file, or use a connected device.</small></div>`}${state.pending ? `<div class="agent-status" aria-live="polite"><span class="spinner"></span>${esc(state.pending)}</div>` : ""}</div>${state.attachment ? `<div class="attachment-chip">Attached: ${esc(state.attachment.name)} <button type="button" id="clear-attachment">×</button></div>` : ""}<form id="chat-form" class="composer"><button type="button" id="attach" class="composer-icon">＋</button><input id="chat-input" autocomplete="off" placeholder="Message Kim…" ${state.pending ? "disabled" : ""} />${voiceSupport ? `<button type="button" id="mic" class="composer-icon" ${state.pending ? "disabled" : ""}>♩</button>` : ""}<button type="submit" ${state.pending ? "disabled" : ""}>↑</button></form><input id="file-picker" type="file" hidden /><div class="suggestions"><button data-prompt="Prepare my day">Prepare my day</button><button data-prompt="Show my calendar">Show my calendar</button></div></section><aside id="side-panel" class="side-panel ${state.panelOpen ? "" : "collapsed"}"><div class="side-head"><strong>Panels</strong><button id="side-toggle" class="side-close" title="Hide panels">×</button></div><div class="side-section"><div class="side-title">Research with Kim</div><textarea id="research-input" placeholder="What should Kim investigate?"></textarea><button id="research-run" class="side-run">Run</button><div id="research-status" class="side-result side-muted">No research running.</div></div><div class="side-section"><div class="side-title">Kim's briefing</div><button id="briefing-run" class="side-run">Prepare my day</button><div id="briefing-result" class="side-result side-muted">Ask Kim to prepare your day.</div></div><div class="side-section"><div class="side-title">Requests</div><div id="requests-list" class="side-result side-muted">No requests waiting.</div></div></aside></div>`);
   document.querySelector<HTMLFormElement>("#chat-form")!.onsubmit = async (e) => {
     e.preventDefault();
     const input = document.querySelector<HTMLInputElement>("#chat-input")!;
@@ -185,6 +246,10 @@ function chat() {
   document.querySelector<HTMLInputElement>("#file-picker")?.addEventListener("change", (event) => { const file = (event.target as HTMLInputElement).files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { state.attachment = { name: file.name, text: String(reader.result || "").slice(0, 120000) }; render(); }; reader.readAsText(file); });
   document.querySelector("#clear-attachment")?.addEventListener("click", () => { state.attachment = null; render(); });
   document.querySelector("#mic")?.addEventListener("click", () => {
+    if (nativeMic()) {
+      try { native.mic(); } catch { /* ignore */ }
+      return;
+    }
     const Recognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!Recognition) return;
     const recognition = new Recognition(); recognition.lang = "en-IN";
@@ -192,14 +257,104 @@ function chat() {
     recognition.start();
   });
   document.querySelectorAll<HTMLButtonElement>("[data-prompt]").forEach((b) => b.onclick = () => { document.querySelector<HTMLInputElement>("#chat-input")!.value = b.dataset.prompt!; document.querySelector<HTMLFormElement>("#chat-form")!.requestSubmit(); });
+  document.querySelector("#side-toggle")?.addEventListener("click", () => { state.panelOpen = false; localStorage.setItem("kim.panel", "closed"); render(); });
+  document.querySelector("#research-run")?.addEventListener("click", startResearch);
+  document.querySelector("#briefing-run")?.addEventListener("click", prepareBriefing);
+  document.querySelectorAll<HTMLButtonElement>("[data-music]").forEach((b) => b.onclick = () => downloadMusic(b.dataset.music!));
+  renderRequests();
 }
-function research() {
-  shell(`<section class="panel-page"><div class="intro">Give Kim a question. It will search multiple sources, keep the evidence, and return a readable brief.</div><form id="research-form" class="research-form"><textarea id="research-input" placeholder="What should Kim investigate?"></textarea><button>Start research</button></form><div id="research-result" class="result"><div class="empty"><span class="spark">⌕</span><p>No research running.</p><small>Evidence and source links will appear here.</small></div></div></section>`);
-  document.querySelector<HTMLFormElement>("#research-form")!.onsubmit = async (e) => { e.preventDefault(); const input = document.querySelector<HTMLTextAreaElement>("#research-input")!; const result = document.querySelector<HTMLDivElement>("#research-result")!; if (!input.value.trim()) return; result.innerHTML = `<div class="loading"><span class="spinner"></span> Kim is researching…</div>`; try { const job = await api("/v1/research", { method: "POST", body: JSON.stringify({ question: input.value.trim() }) }); let data; for (let i = 0; i < 60; i++) { await new Promise((r) => setTimeout(r, 1000)); data = await api(`/v1/research/${job.id}`); if (["completed", "failed"].includes(data.status)) break; } result.innerHTML = data.status === "completed" ? `<h2>Research brief</h2><pre>${esc(data.result || "No evidence returned")}</pre>` : `<div class="error">${esc(data.error || "Research failed")}</div>`; } catch (error) { result.innerHTML = `<div class="error">${esc((error as Error).message)}</div>`; } };
+async function approvals() {
+  shell(`<section class="panel-page"><div class="intro">Actions that can affect other people or external services wait here for your approval.</div><div id="approval-list" class="list"><div class="loading"><span class="spinner"></span> Loading approvals…</div></div></section>`);
+  try {
+    const data = await api("/v1/approvals");
+    const items = (data.approvals || data || []).filter((item: any) => item.status === "pending");
+    document.querySelector("#approval-list")!.innerHTML = items.length ? items.map((item: any) => `<article class="list-card"><div><strong>${esc(item.tool || item.action || item.name || "Requested action")}</strong><p>${esc(item.summary || JSON.stringify(item.args || item.payload || {}))}</p></div><div class="card-actions"><button data-approval="${esc(item.id)}" data-action="approve">Approve</button><button class="muted" data-approval="${esc(item.id)}" data-action="reject">Reject</button></div></article>`).join("") : `<div class="empty"><p>No requests waiting.</p></div>`;
+    document.querySelectorAll<HTMLButtonElement>("[data-approval]").forEach((button) => button.onclick = async () => { await api(`/v1/approvals/${button.dataset.approval}/${button.dataset.action}`, { method: "POST", body: "{}" }); approvals(); });
+  } catch (error) {
+    document.querySelector("#approval-list")!.innerHTML = `<div class="error">${esc((error as Error).message)}</div>`;
+  }
 }
-async function approvals() { shell(`<section class="panel-page"><div class="intro">Actions that can affect other people or external services wait here for your approval.</div><div id="approval-list" class="list"><div class="loading"><span class="spinner"></span> Loading approvals…</div></div></section>`); try { const data = await api("/v1/approvals"); const items = (data.approvals || data || []).filter((item: any) => item.status === "pending"); document.querySelector("#approval-list")!.innerHTML = items.length ? items.map((item: any) => `<article class="list-card"><div><strong>${esc(item.tool || item.action || item.name || "Requested action")}</strong><p>${esc(item.summary || JSON.stringify(item.args || item.payload || {}))}</p></div><div class="card-actions"><button data-approval="${esc(item.id)}" data-action="approve">Approve</button><button class="muted" data-approval="${esc(item.id)}" data-action="reject">Reject</button></div></article>`).join("") : `<div class="empty"><p>No requests waiting.</p></div>`; document.querySelectorAll<HTMLButtonElement>("[data-approval]").forEach((button) => button.onclick = async () => { await api(`/v1/approvals/${button.dataset.approval}/${button.dataset.action}`, { method: "POST", body: "{}" }); approvals(); }); } catch (error) { document.querySelector("#approval-list")!.innerHTML = `<div class="error">${esc((error as Error).message)}</div>`; } }
-async function knowledge() { shell(`<section class="panel-page"><div class="intro">Private sources Kim can search across conversations and tasks.</div><div id="knowledge-list" class="list"><div class="loading"><span class="spinner"></span> Loading sources…</div></div></section>`); try { const data = await api("/v1/knowledge/sources"); const items = data.sources || data || []; document.querySelector("#knowledge-list")!.innerHTML = items.length ? items.map((item: any) => `<article class="list-card"><div><strong>${esc(item.title || item.name || "Source")}</strong><p>${esc(item.path || item.url || item.kind || "Knowledge source")}</p></div><span class="tag">${esc(item.kind || "indexed")}</span></article>`).join("") : `<div class="empty"><p>No sources indexed yet.</p><small>Ask Kim to remember a file or URL to begin.</small></div>`; } catch (error) { document.querySelector("#knowledge-list")!.innerHTML = `<div class="error">${esc((error as Error).message)}</div>`; } }
-function settings() { const base = prompt("Kim server URL", state.base); if (base === null) return; const pin = prompt("Kim PIN", state.pin); if (pin === null) return; state.base = base.replace(/\/$/, ""); state.pin = pin; localStorage.setItem("kim.server", state.base); localStorage.setItem("kim.pin", state.pin); render(); }
+async function startResearch() {
+  const input = document.querySelector<HTMLTextAreaElement>("#research-input");
+  const status = document.querySelector<HTMLElement>("#research-status");
+  if (!input || !status || !input.value.trim()) return;
+  const question = input.value.trim();
+  status.innerHTML = `<div class="loading"><span class="spinner"></span>Kim is researching…</div>`;
+  try {
+    const created = await api("/v1/research", { method: "POST", body: JSON.stringify({ question, depth: 2, max_sources: 5 }) });
+    const id = created.job?.id;
+    if (!id) throw new Error("research job did not start");
+    let data: any;
+    for (let i = 0; i < 90; i++) {
+      await new Promise((r) => setTimeout(r, 1200));
+      data = await api(`/v1/research/${id}`);
+      if (data.job && ["completed", "failed"].includes(data.job.status)) break;
+    }
+    const job = data?.job || {};
+    status.innerHTML = job.status === "completed"
+      ? `<div class="side-row"><strong>Research brief</strong><p>${esc(job.result || "No evidence returned")}</p></div>`
+      : `<div class="error">${esc(job.error || "Research failed")}</div>`;
+  } catch (error) {
+    status.innerHTML = `<div class="error">${esc((error as Error).message)}</div>`;
+  }
+}
+async function prepareBriefing() {
+  const box = document.querySelector<HTMLElement>("#briefing-result");
+  if (!box) return;
+  box.innerHTML = `<div class="loading"><span class="spinner"></span>Kim is reviewing your day…</div>`;
+  try {
+    const data = await api("/v1/my-day");
+    const rows = (data.results || []).map((item: any) => `<div class="side-row"><strong>${esc(item.source)}${item.status !== "ready" ? ` · ${esc(String(item.status).replace(/_/g, " "))}` : ""}</strong>${item.text ? `<p>${esc(item.text)}</p>` : ""}</div>`).join("");
+    const pending = Number(data.pending_approvals?.length || 0);
+    box.innerHTML = rows + (pending ? `<div class="side-row"><strong>${pending} action approval(s) waiting</strong></div>` : "");
+  } catch (error) {
+    box.innerHTML = `<div class="error">${esc((error as Error).message)}</div>`;
+  }
+}
+async function renderRequests() {
+  const list = document.querySelector<HTMLElement>("#requests-list");
+  if (!list) return;
+  list.innerHTML = `<div class="loading"><span class="spinner"></span>Loading…</div>`;
+  try {
+    const data = await api("/v1/approvals");
+    const items = (data.approvals || []).filter((item: any) => item.status === "pending");
+    if (!items.length) { list.innerHTML = `<div class="side-muted">No requests waiting.</div>`; return; }
+    list.innerHTML = items.map((item: any) => `<div class="side-request"><strong>${esc(item.summary || item.tool || item.name || "Requested action")}</strong><div class="card-actions"><button data-approval="${esc(item.id)}" data-action="approve">Approve</button><button class="muted" data-approval="${esc(item.id)}" data-action="reject">Not now</button></div></div>`).join("");
+    list.querySelectorAll<HTMLButtonElement>("[data-approval]").forEach((button) => button.onclick = async () => { await api(`/v1/approvals/${button.dataset.approval}/${button.dataset.action}`, { method: "POST", body: "{}" }); renderRequests(); });
+  } catch (error) {
+    list.innerHTML = `<div class="error">${esc((error as Error).message)}</div>`;
+  }
+}
+async function downloadMusic(jobId: string) {
+  const url = `${state.base}/v1/music/${jobId}/download`;
+  if (native && typeof native.download === "function") {
+    try { native.download(url, jobId); return; } catch { /* fall through to web download */ }
+  }
+  try {
+    const response = await fetch(url, { headers: { "X-Kim-Pin": state.pin } });
+    if (!response.ok) throw new Error(`download failed (${response.status})`);
+    const blob = await response.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${jobId}.mp3`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+  } catch (error) {
+    alert(`Download failed: ${(error as Error).message}`);
+  }
+}
+function settings() {
+  const dialog = document.querySelector<HTMLDialogElement>("#connect-dialog");
+  const serverInput = document.querySelector<HTMLInputElement>("#connect-server");
+  const pinInput = document.querySelector<HTMLInputElement>("#connect-pin");
+  if (!dialog || !serverInput || !pinInput) return;
+  serverInput.value = state.base;
+  pinInput.value = state.pin;
+  dialog.showModal();
+  pinInput.focus();
+}
 async function connectPropAI() {
   try {
     let data;
@@ -214,18 +369,9 @@ async function connectPropAI() {
       data = await api("/v1/propai/start");
     }
     // Keep Kim alive while PropAI/Supabase authentication runs in its own
-    // WebView. The old implementation navigated the main window away, which
+    // window. The old implementation navigated the main window away, which
     // made an expired callback look like Kim had exited.
-    const authWindow = new WebviewWindow("propai-auth", {
-      url: data.auth_url,
-      title: "Connect PropAI",
-      width: 720,
-      height: 820,
-      resizable: true,
-    });
-    authWindow.once("tauri://error", (event) => {
-      alert(`PropAI window could not open: ${String(event.payload)}`);
-    });
+    await openExternal(data.auth_url, "Connect PropAI", 720, 820);
   } catch (error) {
     alert(`PropAI connection could not start: ${(error as Error).message}`);
   }
@@ -269,6 +415,30 @@ async function updateConnection() {
   }
 }
 
+document.querySelector<HTMLFormElement>("#connect-form")?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const serverInput = document.querySelector<HTMLInputElement>("#connect-server");
+  const pinInput = document.querySelector<HTMLInputElement>("#connect-pin");
+  const nextServer = String(serverInput?.value || "").trim().replace(/\/+$/, "");
+  const nextPin = String(pinInput?.value || "").trim();
+  state.base = nextServer || (isTauri() ? DEFAULT_SERVER : originBase);
+  state.pin = nextPin;
+  localStorage.setItem("kim.server", state.base);
+  localStorage.setItem("kim.pin", state.pin);
+  if (native && typeof native.setPin === "function") {
+    try { native.setPin(state.pin, state.activeUser); } catch { /* ignore */ }
+  }
+  const dialog = document.querySelector<HTMLDialogElement>("#connect-dialog");
+  dialog?.close();
+  render();
+});
+
 window.setInterval(updateConnection, 10_000);
 
 syncInitialWindowMode();
+setTimeout(() => {
+  if (!state.pin) {
+    const dialog = document.querySelector<HTMLDialogElement>("#connect-dialog");
+    if (dialog) dialog.showModal();
+  }
+}, 400);
