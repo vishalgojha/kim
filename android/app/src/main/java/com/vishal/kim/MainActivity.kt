@@ -243,7 +243,7 @@ class MainActivity : ComponentActivity() {
                     executor.execute {
                         val result = runCatching { KimClient(baseUrl, pin, activeUser).connectDesktop() }
                             .getOrElse { "500: ${it.message ?: "connection failed"}" }
-                        runOnUiThread { messages.add(ChatMessage(false, if (result.startsWith("200:")) { val body = result.substringAfter(": "); if (body.contains("\"connected\":true")) "Desktop connection is ready. Kim can use the connected desktop when you ask." else "Desktop relay is offline. Start Kim on the laptop first." } else "Desktop connection failed: ${result.substringAfter(": ")}")) }
+                        runOnUiThread { messages.add(ChatMessage(false, if (result.startsWith("200:")) { val body = result.substringAfter(": "); val connected = runCatching { JSONObject(body).optBoolean("connected", false) }.getOrElse { body.contains("\"connected\": true") }; if (connected) "Desktop connection is ready. Kim can use the connected desktop when you ask." else "Desktop relay is offline. Start Kim on the laptop first." } else "Desktop connection failed: ${result.substringAfter(": ")}")) }
                     }
                     context.startForegroundService(Intent(context, KimForegroundService::class.java))
                 })

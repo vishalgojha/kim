@@ -40,8 +40,11 @@ class RemoteServer:
         speak: Optional[Callable[[str], Awaitable[None]]] = None,
         voice_url: Optional[Callable[[], str]] = None,
         text_chat: Optional[ElevenTextChat] = None,
+        hosted: bool = False,
+        prefer_agent: bool = False,
     ) -> None:
         remote = cfg.get("remote", {})
+        self.hosted = hosted
         self.enabled = bool(remote.get("enabled", False))
         self.host = str(remote.get("host", "127.0.0.1"))
         self.port = int(remote.get("port", 8765))
@@ -63,6 +66,8 @@ class RemoteServer:
         self.voice_url = voice_url
         self.text_chat = text_chat
         self.last_text_chat_error = ""
+        self.prefer_agent = prefer_agent
+        self.last_agent_error = ""
         self.audit_path = Path(os.environ.get("KIM_REMOTE_AUDIT_PATH", str(remote.get("audit_path", "~/.aurora/remote-audit.jsonl")))).expanduser()
         self.state_path = Path(os.environ.get("KIM_REMOTE_STATE_PATH", str(remote.get("state_path", "~/.aurora/remote-state.json")))).expanduser()
         self.remote_domain = str(remote.get("domain", "")).strip().rstrip("/")
@@ -74,7 +79,7 @@ class RemoteServer:
         self.device_waiters: Dict[str, asyncio.Future[str]] = {}
         self.google_states: Dict[str, float] = {}
         self.propai_oauth: Dict[str, Any] = {}
-        self.agent = AgentCore(registry)
+        self.agent = AgentCore(registry, hosted=hosted)
         self.research_jobs: Dict[str, Dict[str, Any]] = {}
         self.research_lock = threading.Lock()
         self.commands_lock = threading.Lock()
@@ -185,7 +190,7 @@ class RemoteServer:
                         state = state_path.read_text().strip()
                     except OSError:
                         state = "offline"
-                    self._reply(200, {"ok": True, "voice_state": state, "agent": owner.agent.status(), "elevenlabs": {"text_chat_initialized": owner.text_chat is not None, "agent_id_configured": bool(getattr(owner.text_chat, "agent_id", "")), "last_error": owner.last_text_chat_error}, "allowed_tools": sorted(owner.allowed_tools), "direct_tools": sorted(owner.direct_tools)})
+                    self._reply(200, {"ok": True, "voice_state": state, "agent": owner.agent.status(), "text_brain": {"prefer_agent": owner.prefer_agent, "configured": owner.agent.configured, "last_agent_error": owner.last_agent_error[:300]}, "elevenlabs": {"text_chat_initialized": owner.text_chat is not None, "agent_id_configured": bool(getattr(owner.text_chat, "agent_id", "")), "last_error": owner.last_text_chat_error}, "allowed_tools": sorted(owner.allowed_tools), "direct_tools": sorted(owner.direct_tools)})
                     return
                 if self.path.startswith("/v1/music/"):
                     job_id = self.path.removeprefix("/v1/music/").strip("/")
@@ -407,7 +412,7 @@ class RemoteServer:
                         action = str(data.get("action", "")).strip().lower()
                         allowed = {
                             "open_url", "open_app", "media", "volume", "flashlight", "notify",
-                            "type_text", "press_key", "screenshot", "playwright_run",
+                            "type_text", "press_key", "screenshot", "playwright_run", "browser_action", "computer_action",
                         }
                         if action not in allowed:
                             raise ValueError(f"action must be one of {sorted(allowed)}")
@@ -449,7 +454,16 @@ class RemoteServer:
                                 content = str(attachment.get("text", ""))[:120_000]
                                 if content:
                                     message += f"\n\n[Attached file: {name}]\n{content}\n[/Attached file]"
-                        if owner.text_chat is not None:
+                        if owner.prefer_agent:
+                            try:
+                                result = owner._run(owner.agent.chat(session_id, message, owner.create_approval))
+                            except Exception as exc:  # noqa: BLE001
+                                owner.last_agent_error = str(exc)[:500]
+                                log.warning("Kim agent chat failed; falling back to ElevenLabs text chat: %s", exc)
+                                if owner.text_chat is None:
+                                    raise
+                                result = owner._run(owner.text_chat.chat(session_id, message, owner.create_approval, device_context))
+                        elif owner.text_chat is not None:
                             try:
                                 result = owner._run(owner.text_chat.chat(session_id, message, owner.create_approval, device_context))
                             except Exception as exc:  # noqa: BLE001
@@ -565,7 +579,7 @@ class RemoteServer:
         log.info("remote API listening on %s:%s", self.host, self.port)
 
     async def queue_device_command(self, action: str, device_id: str, parameters: Dict[str, Any]) -> str:
-        allowed = {"open_url", "open_app", "type_text", "press_key", "screenshot", "playwright_run"}
+        allowed = {"open_url", "open_app", "type_text", "press_key", "screenshot", "playwright_run", "browser_action", "computer_action"}
         if action not in allowed:
             return f"unsupported device action: {action}"
         with self.commands_lock:

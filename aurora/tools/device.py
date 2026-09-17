@@ -10,11 +10,11 @@ from .registry import tool
 
 @tool(
     "device_command",
-    "Execute an action on a connected physical device and wait for its result. On Android, use this for the connected Linux laptop with device_id=laptop; never use launch_app for a laptop action requested from a phone.",
+"Execute a physical action on the user's connected Linux laptop and wait for its result. Use this from a phone, web, or desktop chat to control the laptop: open_app (launch an app), open_url (open a link in the browser), browser_action (click/type/key/scroll the visible browser window), computer_action (computer-agent desktop control: see/ocr the screen, click_label, mouse move/click/drag/scroll, type, keys, window list/activate/move), type_text, press_key, screenshot, or playwright_run. Never claim the action succeeded unless the returned result confirms it; the laptop must be online for an action to run.",
     {
-        "action": {"type": "string", "description": "open_app, open_url, type_text, press_key, screenshot, or playwright_run", "required": True},
-        "device_id": {"type": "string", "description": "Connected target device id; use laptop for the Linux desktop", "required": False},
-        "parameters": {"type": "object", "description": "Action parameters, such as name for open_app or url for open_url", "required": False},
+        "device_id": {"type": "string", "description": "target device, normally 'laptop'", "required": False},
+        "action": {"type": "string", "description": "open_app, open_url, browser_action, computer_action, type_text, press_key, screenshot, or playwright_run", "required": True},
+        "parameters": {"type": "object", "description": "Action parameters; for open_app use name, for open_url use url, for browser_action use action/x/y/text/key/amount, for computer_action use action/x/y/dx/dy/button/text/key/title/window/amount/width/height", "required": False},
     },
     timeout=40,
 )

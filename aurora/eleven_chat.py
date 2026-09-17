@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List
 
 import websockets
 
-from .agent import DIRECT_TOOLS, WRITE_TOOLS
+from .agent import DIRECT_TOOLS, HOSTED_LAPTOP_TOOLS, WRITE_TOOLS, route_laptop_tool
 from .eleven import ElevenAPI, ElevenError
 from .tools.context import get_ctx
 from .tools.registry import ToolRegistry
@@ -20,10 +20,11 @@ MAX_MSG = 16 * 1024 * 1024
 
 
 class ElevenTextChat:
-    def __init__(self, cfg: Dict[str, Any], eleven: ElevenAPI, registry: ToolRegistry) -> None:
+    def __init__(self, cfg: Dict[str, Any], eleven: ElevenAPI, registry: ToolRegistry, hosted: bool = False) -> None:
         self.cfg = cfg
         self.eleven = eleven
         self.registry = registry
+        self.hosted = hosted
         self.agent_id = cfg["elevenlabs"]["agent_id"]
 
     async def _ws_url(self) -> str:
@@ -67,7 +68,10 @@ class ElevenTextChat:
     @staticmethod
     def _approval_text(name: str, args: Dict[str, Any], approval: Dict[str, Any]) -> str:
         preview = json.dumps(args, ensure_ascii=False)[:700]
-        return f"I prepared `{name}` and sent it to your approval queue. Details: {preview} Approval ID: {approval['id']}."
+        return (
+            f"NOT EXECUTED: `{name}` was sent to the approval queue and nothing ran. "
+            f"Details: {preview} Approval ID: {approval['id']}."
+        )
 
     async def chat(
         self,
@@ -144,9 +148,11 @@ class ElevenTextChat:
                     if not isinstance(params, dict):
                         params = {}
                     require_approval = bool((self.cfg.get("permissions") or {}).get("require_approval", False))
-                    if require_approval and name in WRITE_TOOLS and name not in DIRECT_TOOLS:
+                    if self.hosted and name in HOSTED_LAPTOP_TOOLS:
+                        result, is_error = await route_laptop_tool(name, params)
+                    elif require_approval and name in WRITE_TOOLS and name not in DIRECT_TOOLS:
                         approval = request_approval(name, params, f"Kim wants to run {name}")
-                        result, is_error = self._approval_text(name, params, approval), False
+                        result, is_error = self._approval_text(name, params, approval), True
                     else:
                         result, is_error = await self.registry.run(name, params)
                     tools_used.append(name)

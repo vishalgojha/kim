@@ -48,6 +48,19 @@ endpoint uses Gemini's OpenAI-compatible API; `KIM_LLM_BASE_URL` and
 `KIM_LLM_MODEL` can point to another compatible provider. Web and Android use
 `/v1/chat`; side effects always enter Kim's approval queue.
 
+For text-based tool calling, `SARVAM_API_KEY` (model `sarvam-105b` at
+`https://api.sarvam.ai`) is used as an automatic fallback whenever the primary
+brain above is unconfigured or errors. It goes through the exact same
+approval/tool-calling pipeline. Voice always uses ElevenLabs; `/v1/chat` text
+prefers the Sarvam/default text brain unless `KIM_TEXT_BRAIN=elevenlabs`.
+
+For computer-agent desktop control, `computer_action` drives the laptop like a
+desktop agent: `see`/`ocr` read screen text, `click_label` clicks what it sees,
+plus mouse move/click/drag/scroll, typing, hotkeys, and window
+list/activate/move. Install once on the laptop: `sudo apt install -y
+tesseract-ocr xdotool` (Wayland input injection: `sudo apt install -y ydotool`
++ `sudo systemctl enable --now ydotool`).
+
 Prereqs: Python 3.11+, `ffmpeg`, and a working audio device. Linux can use `parec`/PulseAudio; macOS and Windows use the `sounddevice` fallback. `opencode` is optional, for the coding tool.
 
 ## Floating opencode tool

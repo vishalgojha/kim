@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 
 from .audio import AudioCapture, AudioOutput
 from .config import ROOT, load_config, save_config
+from .agent import HOSTED_LAPTOP_TOOLS
 from .eleven import ElevenAPI, ElevenError
 from .eleven_chat import ElevenTextChat
 from .log import get_logger, setup_logging
@@ -24,8 +25,8 @@ from pathlib import Path
 log = get_logger("aurora")
 
 
-def ensure_agent(cfg: Dict[str, Any], eleven: ElevenAPI, reset: bool = False) -> str:
-    tools = REGISTRY.client_schemas()
+def ensure_agent(cfg: Dict[str, Any], eleven: ElevenAPI, reset: bool = False, schemas: Optional[list] = None) -> str:
+    tools = schemas if schemas is not None else REGISTRY.client_schemas()
     log.info("syncing %d client tools via toolbox endpoint...", len(tools))
     tool_ids = eleven.sync_tools(tools)
     log.info("%d tool_id(s) wired", len(tool_ids))
@@ -176,7 +177,7 @@ async def _desktop_device_command_loop(cfg: Dict[str, Any]) -> None:
         return
     device_id = os.environ.get("KIM_DESKTOP_DEVICE_ID", "laptop").strip() or "laptop"
     base = f"https://{domain}"
-    capabilities = ["open_url", "open_app", "type_text", "press_key", "screenshot", "playwright_run"]
+    capabilities = ["open_url", "open_app", "type_text", "press_key", "screenshot", "playwright_run", "browser_action", "computer_action"]
     async with httpx.AsyncClient(timeout=12.0) as client:
         while True:
             try:
@@ -203,6 +204,8 @@ async def _desktop_device_command_loop(cfg: Dict[str, Any]) -> None:
                             "press_key": "press_key",
                             "screenshot": "screenshot",
                             "playwright_run": "playwright_run",
+                            "browser_action": "browser_action",
+                            "computer_action": "computer_action",
                         }.get(action)
                         tool_params = params
                         if action == "open_url":
@@ -258,22 +261,28 @@ async def run_remote(cfg: Dict[str, Any]) -> None:
         cfg["remote"]["allowed_tools"] = [item.strip() for item in allowed_tools.split(",") if item.strip()]
     _build_context(cfg)
     eleven = ElevenAPI(cfg) if cfg["elevenlabs"].get("api_key") and cfg["elevenlabs"].get("agent_id") else None
+    hosted_schemas = [s for s in REGISTRY.client_schemas() if s["name"] not in HOSTED_LAPTOP_TOOLS]
     if eleven:
         # Keep the hosted ElevenLabs agent aligned with Kim's local registry and
         # Onyx-like operating prompt. Eleven remains the conversational brain;
-        # Kim owns the tools, approvals, memory, and device routing.
+        # Kim owns the tools, approvals, memory, and device routing. Laptop-only
+        # tools are hidden from the hosted agent: the laptop is reached through
+        # device_command so Kim never claims an action that ran in the container.
         try:
-            ensure_agent(cfg, eleven)
+            ensure_agent(cfg, eleven, schemas=hosted_schemas)
         except ElevenError:
             log.exception("could not sync hosted ElevenLabs agent; using existing version")
     voice_url = (lambda: eleven.get_signed_url(cfg["elevenlabs"]["agent_id"])) if eleven else None
+    prefer_agent = os.environ.get("KIM_TEXT_BRAIN", "agent").strip().lower() != "elevenlabs"
     remote = RemoteServer(
         cfg,
         REGISTRY,
         asyncio.get_running_loop(),
         Path.home() / ".aurora" / "voice_command",
         voice_url=voice_url,
-        text_chat=ElevenTextChat(cfg, eleven, REGISTRY) if eleven else None,
+        text_chat=ElevenTextChat(cfg, eleven, REGISTRY, hosted=True) if eleven else None,
+        hosted=True,
+        prefer_agent=prefer_agent,
     )
     remote.start()
     stop_ev = asyncio.Event()
