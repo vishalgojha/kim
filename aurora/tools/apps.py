@@ -4,6 +4,7 @@ import shutil
 from ..host import open_default
 
 from .registry import tool
+from .win32 import IS_WINDOWS
 
 ALIASES = {
     # Keep "browser" on the desktop's configured default handler. Explicit
@@ -43,6 +44,8 @@ async def navigate_browser(url: str) -> str:
     target = url.strip()
     if len(target) > 2_000 or not target.startswith(("http://", "https://")):
         return "only http:// and https:// URLs are supported"
+    if IS_WINDOWS:
+        return await _navigate_browser_windows(target)
     xdotool = shutil.which("xdotool")
     if xdotool:
         for browser_class in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "firefox", "brave-browser"):
@@ -79,6 +82,8 @@ async def navigate_browser(url: str) -> str:
     timeout=20,
 )
 async def browser_action(action: str, x: int = 0, y: int = 0, text: str = "", key: str = "", amount: int = 0) -> str:
+    if IS_WINDOWS:
+        return await _browser_action_windows(action, x, y, text, key, amount)
     xdotool = shutil.which("xdotool")
     if not xdotool:
         return "browser actions require xdotool on the desktop"
@@ -119,12 +124,18 @@ async def browser_action(action: str, x: int = 0, y: int = 0, text: str = "", ke
     timeout=30,
 )
 async def launch_app(name: str) -> str:
+    from .win32 import launch as win_launch
     requested = name.strip()
     normalized = requested.lower()
     if normalized == "browser":
+        if IS_WINDOWS:
+            return "opened the default browser" if open_default("about:blank") else "failed to open the default browser"
         return "browser is already open; use navigate_browser to change the current tab" if shutil.which("xdotool") else ("opened the default browser" if open_default("about:blank") else "failed to open the default browser")
 
     target = ALIASES.get(normalized, requested)
+    if IS_WINDOWS:
+        ok, msg = await _run_sync(win_launch, target)
+        return msg if ok else f"failed to launch {requested}: {msg}"
     executable = shutil.which(target)
     if executable:
         try:
@@ -159,3 +170,50 @@ async def launch_app(name: str) -> str:
 )
 def known_apps() -> str:
     return ", ".join(sorted({value for value in ALIASES.values() if value}))
+
+
+async def _run_sync(fn, *args):
+    return await asyncio.to_thread(fn, *args)
+
+
+async def _navigate_browser_windows(target: str) -> str:
+    from . import win32
+    ok, res = await _run_sync(win32.window_list)
+    if ok:
+        titles = [
+            line for line in (res or "").splitlines()
+            if any(browser in line.lower() for browser in ("chrome", "chromium", "firefox", "edge", "brave"))
+        ]
+        if titles:
+            title = titles[0].split(" ")[0]
+            await _run_sync(win32.window_activate, title)
+            await _run_sync(win32.key, "ctrl+l")
+            await _run_sync(win32.type_text, target)
+            await _run_sync(win32.key, "enter")
+            return f"navigated the existing {title} window"
+    open_default(target)
+    return "no open browser window was found; opened the URL with the default browser"
+
+
+async def _browser_action_windows(action: str, x: int, y: int, text: str, key: str, amount: int) -> str:
+    from . import win32
+    action = action.strip().lower()
+    if action == "click":
+        if x < 0 or y < 0:
+            return "click requires non-negative x and y coordinates"
+        ok, msg = await _run_sync(win32.click, x, y, 1, "1", 50)
+        return msg if ok else "browser action failed: " + msg
+    if action == "type":
+        if not text:
+            return "type requires text"
+        ok, msg = await _run_sync(win32.type_text, text[:4000])
+        return msg if ok else "browser action failed: " + msg
+    if action == "key":
+        if not key:
+            return "key requires a key name"
+        ok, msg = await _run_sync(win32.key, key)
+        return msg if ok else "browser action failed: " + msg
+    if action == "scroll":
+        ok, msg = await _run_sync(win32.scroll, amount, 0)
+        return msg if ok else "browser action failed: " + msg
+    return "browser_action supports click, type, key, or scroll"

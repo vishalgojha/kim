@@ -67,6 +67,30 @@ enable --now ydotool`). To enable vision descriptions, set `KIM_VISION_API_KEY`
 primary brain key; the Sarvam v2 beta `gemma4` model (`/v2/chat/completions`)
 supports image input for this too.
 
+## Windows desktop relay
+
+The same `computer_action`/desktop tools run on Windows: `aurora/tools/win32.py`
+provides the backend (Pillow screen capture, pyautogui input, pygetwindow window
+control, pytesseract or WinRT OCR) and the tools dispatch by platform
+(`platform.system()`), so one registry serves Linux and Windows.
+
+Set up a Windows machine:
+
+1. Install Python 3.11+ and tesseract from
+   <https://github.com/UB-Mannheim/tesseract/wiki> (add it to `PATH`).
+2. `git clone` this repo, then run `run_windows.bat` (creates a venv, installs
+   `requirements.txt`, and starts `python -m aurora desktop`).
+3. In `.env` set a unique relay identity so it does not collide with the Linux
+   laptop:
+   - `KIM_REMOTE_PIN=<hosted pin>`
+   - `KIM_DESKTOP_DEVICE_ID=windows-desktop`
+4. Chat to it with `device_command(device_id="windows-desktop", action="computer_action", ...)`,
+   or add it to `install_autostart` (`python -m aurora setup`) to start at login.
+
+The voice/chat brain, file/shell tools, and browser automation (Playwright) are
+already cross-platform. Windows-only gaps: no Wayland concepts apply; screen
+description via vision still needs `KIM_VISION_API_KEY` like Linux.
+
 Prereqs: Python 3.11+, `ffmpeg`, and a working audio device. Linux can use `parec`/PulseAudio; macOS and Windows use the `sounddevice` fallback. `opencode` is optional, for the coding tool.
 
 ## Floating opencode tool

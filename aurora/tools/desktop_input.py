@@ -1,7 +1,9 @@
 import asyncio
+import platform
 import shutil
 
 from .registry import tool
+from .win32 import IS_WINDOWS
 
 
 _SAFE_KEYS = {
@@ -30,6 +32,12 @@ def _xdotool() -> str:
 async def type_text(text: str) -> str:
     if not text or len(text) > 500:
         raise ValueError("text must be 1-500 characters")
+    if IS_WINDOWS:
+        from .win32 import type_text as win_type
+        ok, msg = win_type(text)
+        if not ok:
+            raise RuntimeError(msg)
+        return f"typed {len(text)} characters"
     proc = await asyncio.create_subprocess_exec(
         _xdotool(), "type", "--clearmodifiers", "--delay", "8", "--", text,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
@@ -54,6 +62,12 @@ async def press_key(key: str) -> str:
         normalized = "space"
     if normalized not in _SAFE_KEYS:
         raise ValueError(f"key is not allow-listed: {key}")
+    if IS_WINDOWS:
+        from .win32 import key as win_key
+        ok, msg = win_key(normalized)
+        if not ok:
+            raise RuntimeError(msg)
+        return f"pressed {normalized}"
     proc = await asyncio.create_subprocess_exec(
         _xdotool(), "key", "--clearmodifiers", normalized,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,

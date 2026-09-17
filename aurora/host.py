@@ -94,6 +94,6 @@ def install_autostart(project_root: Path) -> str:
         startup = Path(os.environ.get("APPDATA", Path.home())) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
         startup.mkdir(parents=True, exist_ok=True)
         bat = startup / "Kim.bat"
-        bat.write_text(f'@echo off\ncd /d "{project_root}"\n"{sys.executable}" -m aurora voice\n')
+        bat.write_text(f'@echo off\ncd /d "{project_root}"\n"{sys.executable}" -m aurora desktop\n')
         return f"installed Windows startup launcher: {bat}"
     return "Linux autostart uses ./service.sh install"

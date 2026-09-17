@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import platform
 import re
 import shutil
 import subprocess
@@ -13,6 +14,17 @@ from typing import Any, Dict, List, Tuple
 
 from .registry import tool
 from ..vision import describe_image, is_vision_configured
+
+IS_WINDOWS = platform.system().lower() == "windows"
+
+if IS_WINDOWS:
+    from .win32 import (  # noqa: F401
+        click as _win_click, drag as _win_drag, grab_png as _win_grab,
+        key as _win_key, launch as _win_launch, move as _win_move,
+        ocr as _win_ocr, scroll as _win_scroll, type_text as _win_type,
+        window_activate as _win_window_activate, window_list as _win_window_list,
+        window_move as _win_window_move,
+    )
 
 
 def _ran(cmd: List[str]) -> Tuple[int, str]:
@@ -161,6 +173,9 @@ async def computer_action(action: str = "", x: int = 0, y: int = 0, dx: int = 0,
     if not a:
         return "computer_action needs an action: move, click, dblclick, drag, scroll, type, key, window_list, window_activate, window_move, see, describe, ocr, click_label"
 
+    if IS_WINDOWS:
+        return await _computer_action_windows(a, x, y, dx, dy, button, text, key, title, window, amount, delay_ms, width, height)
+
     if a == "ocr":
         with tempfile.TemporaryDirectory() as tmp:
             png = str(Path(tmp) / "kim_screen.png")
@@ -302,6 +317,111 @@ async def computer_action(action: str = "", x: int = 0, y: int = 0, dx: int = 0,
         if not ok:
             return res
         return f"moved window {target} to ({x},{y})" + (f" size {width}x{height}" if width else "")
+
+    return f"unsupported computer_action: {action}"
+
+
+async def _computer_action_windows(a: str, x: int, y: int, dx: int, dy: int, button: str,
+                                   text: str, key: str, title: str, window: str,
+                                   amount: int, delay_ms: int, width: int, height: int) -> str:
+    if a == "ocr":
+        with tempfile.TemporaryDirectory() as tmp:
+            png = str(Path(tmp) / "kim_screen.png")
+            ok, cap = _win_grab(png)
+            if not ok:
+                return cap
+            okl, ocr, words = _win_ocr(png)
+            if not okl:
+                return cap + "; " + ocr
+        return ocr
+
+    if a in {"see", "describe"}:
+        with tempfile.TemporaryDirectory() as tmp:
+            png = str(Path(tmp) / "kim_screen.png")
+            ok, cap = _win_grab(png)
+            if not ok:
+                return cap
+            try:
+                data = Path(png).read_bytes()
+            except OSError:
+                data = b""
+            desc = (await describe_image(data)) if is_vision_configured() and data else ""
+            okl, ocr, words = _win_ocr(png)
+            if a == "describe":
+                if is_vision_configured() and desc and not desc.startswith("vision "):
+                    return f"{cap}. {desc}"
+                return f"{cap}. Screen text: {ocr[:1500]}" if okl and ocr.strip() else f"{cap}. No readable text detected."
+            parts = [cap]
+            if is_vision_configured() and desc and not desc.startswith("vision "):
+                parts.append(f"On-screen: {desc}")
+            if okl and ocr.strip():
+                parts.append(f"OCR text: {ocr[:2000]}")
+            return ". ".join(parts)
+
+    if a == "click_label":
+        if not text.strip():
+            return "click_label needs the on-screen text to click (text=...)"
+        with tempfile.TemporaryDirectory() as tmp:
+            png = str(Path(tmp) / "kim_screen.png")
+            ok, cap = _win_grab(png)
+            if not ok:
+                return cap
+            okl, ocr, words = _win_ocr(png)
+            if not okl or not words:
+                return cap + "; " + (ocr or "no text found on screen")
+        target = text.strip().lower()
+        matches = [w for w in words if target in w["text"].lower()]
+        if not matches:
+            return f"label '{text}' not found on screen. Screen text: {ocr[:500]}"
+        cx = min(r["x"] for r in matches) + (max(r["x"] + r["w"] for r in matches) - min(r["x"] for r in matches)) // 2
+        cy = min(r["y"] for r in matches) + (max(r["y"] + r["h"] for r in matches) - min(r["y"] for r in matches)) // 2
+        cok, cres = _win_click(cx, cy, 1, button, delay_ms)
+        if not cok:
+            return cres
+        return f"clicked '{text}' at ({cx},{cy})"
+
+    if a == "move":
+        ok, res = _win_move(x, y)
+        return res if not ok else f"pointer moved to ({x},{y})"
+
+    if a in {"click", "dblclick"}:
+        clicks = 2 if a == "dblclick" else 1
+        ok, res = _win_click(x, y, clicks, button, delay_ms)
+        return res if not ok else f"{a} at ({x},{y}) button {button}"
+
+    if a == "drag":
+        ok, res = _win_drag(x, y, dx, dy, button)
+        return res if not ok else f"dragged from ({x},{y}) by ({dx},{dy})"
+
+    if a == "scroll":
+        ok, res = _win_scroll(amount, dx)
+        return res if not ok else f"scrolled {amount}"
+
+    if a == "type":
+        ok, res = _win_type(text)
+        return res if not ok else f"typed {len(text)} chars"
+
+    if a == "key":
+        ok, res = _win_key(key)
+        return res if not ok else f"sent key {key}"
+
+    if a == "window_list":
+        ok, res = _win_window_list()
+        return res if ok else "window list failed: " + res
+
+    if a == "window_activate":
+        ref = title or window or ""
+        if not ref:
+            return "window_activate needs title= or window=<id>"
+        ok, res = _win_window_activate(ref)
+        return res if ok else "failed to activate: " + res
+
+    if a == "window_move":
+        ref = window or title or ""
+        if not ref:
+            return "window_move needs window=<id> and x, y"
+        ok, res = _win_window_move(ref, x, y, width, height)
+        return res if not ok else f"moved window {ref} to ({x},{y})" + (f" size {width}x{height}" if width and height else "")
 
     return f"unsupported computer_action: {action}"
 

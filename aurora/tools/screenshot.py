@@ -5,11 +5,12 @@ import tempfile
 from pathlib import Path
 
 from .registry import tool
+from .win32 import IS_WINDOWS
 
 
 @tool(
     "screenshot",
-    "Capture a screenshot of the screen to a PNG file and return its path. Best effort across X11/Wayland.",
+    "Capture a screenshot of the screen to a PNG file and return its path. Best effort across X11/Wayland/Windows.",
     {"path": {"type": "string", "description": "optional output path (default: ~/Pictures)", "required": False}},
     timeout=30,
 )
@@ -18,6 +19,11 @@ async def screenshot(path: str = "") -> str:
     if out.is_dir():
         out = out / "aurora_screenshot.png"
     out.parent.mkdir(parents=True, exist_ok=True)
+
+    if IS_WINDOWS:
+        from .win32 import grab_png
+        ok, msg = await asyncio.to_thread(grab_png, str(out))
+        return msg if ok else "could not capture screenshot: " + msg
 
     strategies = []
     if shutil.which("gnome-screenshot"):

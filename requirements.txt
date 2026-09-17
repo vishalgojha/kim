@@ -11,3 +11,9 @@ sounddevice>=0.5
 google-api-python-client>=2.180
 google-auth-httplib2>=0.2
 google-auth-oauthlib>=1.2
+# Windows desktop relay (computer-agent control): screen capture, input, windows.
+# Install on the Windows machine running `py -m aurora desktop`.
+pillow>=10.0
+pyautogui>=0.9.54
+pygetwindow>=0.0.9
+pytesseract>=0.3.10   # needs tesseract.exe (https://github.com/UB-Mannheim/tesseract/wiki)
