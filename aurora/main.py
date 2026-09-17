@@ -164,7 +164,37 @@ async def _remote_command_loop(cfg: Dict[str, Any]) -> None:
             await asyncio.sleep(2)
 
 
+_REQUIRED_PARAMS: Dict[str, tuple[str, ...]] = {
+    "type_text": ("text",),
+    "press_key": ("key",),
+    "browser_action": ("action",),
+    "computer_action": ("action",),
+    "playwright_run": ("url",),
+}
+
+_PARAM_EXAMPLES: Dict[str, str] = {
+    "type_text": "{'action': 'type_text', 'parameters': {'text': '<what to type>'}}",
+    "press_key": "{'action': 'press_key', 'parameters': {'key': 'Return'}}",
+    "browser_action": "{'action': 'browser_action', 'parameters': {'action': 'type', 'text': '<what to type>'}}",
+    "computer_action": "{'action': 'computer_action', 'parameters': {'action': 'type', 'text': '<what to type>'}}",
+    "playwright_run": "{'action': 'playwright_run', 'parameters': {'url': 'https://...'}}",
+}
+
+
+def _missing_required(action: str, tool_params: Dict[str, Any]) -> tuple[str, ...]:
+    return tuple(k for k in _REQUIRED_PARAMS.get(action, ()) if not tool_params.get(k))
+
+
+def _missing_param_directive(action: str, missing: tuple[str, ...]) -> str:
+    example = _PARAM_EXAMPLES.get(action, f"{{'action': '{action}', 'parameters': {{...}}}}")
+    return (
+        f"ERROR: device command '{action}' is missing required parameter(s): {', '.join(missing)}; "
+        f"nothing was executed. Send the payload exactly like this: {example}"
+    )
+
+
 async def _desktop_device_command_loop(cfg: Dict[str, Any]) -> None:
+    """Pull desktop actions from the public Kim relay into this laptop."""
     """Pull desktop actions from the public Kim relay into this laptop."""
     import httpx
 
@@ -225,10 +255,15 @@ async def _desktop_device_command_loop(cfg: Dict[str, Any]) -> None:
                         if action in {"open_url", "open_app"} and not tool_params.get("name"):
                             result = f"ERROR: no {'URL' if action == 'open_url' else 'app name'} was provided for {action}; nothing was opened"
                             is_error = True
-                        elif tool_name:
-                            result, is_error = await REGISTRY.run(tool_name, tool_params)
                         else:
-                            result, is_error = f"unsupported desktop action: {action}", True
+                            missing = _missing_required(action, tool_params)
+                            if missing:
+                                result = _missing_param_directive(action, missing)
+                                is_error = True
+                            elif tool_name:
+                                result, is_error = await REGISTRY.run(tool_name, tool_params)
+                            else:
+                                result, is_error = f"unsupported desktop action: {action}", True
                         try:
                             from .tools.tasks import record_action
                             await record_action(f"device.{action}", not is_error, str(result)[:200])
