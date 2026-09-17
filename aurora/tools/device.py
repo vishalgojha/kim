@@ -21,5 +21,5 @@ from .registry import tool
 async def device_command(action: str, device_id: str = "laptop", parameters: dict[str, Any] | None = None) -> str:
     queue = get_ctx().get("queue_device_command")
     if queue is None:
-        return "No connected device bridge is running."
+        return "ERROR: no connected device bridge is running; no action was executed"
     return await queue(action.strip().lower(), device_id.strip() or "laptop", parameters or {})

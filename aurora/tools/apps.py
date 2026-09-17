@@ -103,7 +103,17 @@ async def _launch_app_impl(name: str) -> str:
     if normalized == "browser":
         if IS_WINDOWS:
             return "opened the default browser" if open_default("about:blank") else "failed to open the default browser"
-        return "browser is already open; use navigate_browser to change the current tab" if shutil.which("xdotool") else ("opened the default browser" if open_default("about:blank") else "failed to open the default browser")
+        for candidate in ("google-chrome", "chromium-browser", "chromium", "brave-browser", "firefox", "microsoft-edge"):
+            path = shutil.which(candidate)
+            if path:
+                try:
+                    await asyncio.create_subprocess_exec(
+                        path, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL, start_new_session=True
+                    )
+                    return f"launched {candidate}"
+                except Exception as e:
+                    return f"failed to launch browser: {e}"
+        return "could not find a browser to launch (no chrome/chromium/brave/firefox on PATH)"
 
     target = ALIASES.get(normalized, requested)
     if IS_WINDOWS:
@@ -121,17 +131,23 @@ async def _launch_app_impl(name: str) -> str:
             return f"launched {target}"
         except Exception as e:
             return f"failed to launch {target}: {e}"
-    xdg = shutil.which("xdg-open")
-    if xdg:
-        try:
-            await asyncio.create_subprocess_exec(
-                xdg, target, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
-            )
-            return f"opened {name} with default handler"
-        except Exception as e:
-            return f"failed xdg-open: {e}"
-    if open_default(target):
-        return f"opened {name} with the default handler"
+    # xdg-open / the default handler cannot confirm anything fired; only use
+    # them for URLs or existing files, never for a guessed app name.
+    looks_like_url = target.startswith(("http://", "https://", "www."))
+    looks_like_path = "/" in target or "\\" in target or os.path.isfile(os.path.expanduser(target))
+    if looks_like_url or looks_like_path:
+        xdg = shutil.which("xdg-open")
+        if xdg:
+            try:
+                await asyncio.create_subprocess_exec(
+                    xdg, target, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
+                )
+                return f"opened {name} with default handler"
+            except Exception as e:
+                return f"failed xdg-open: {e}"
+        if open_default(target):
+            return f"opened {name} with the default handler"
+        return f"could not open {name}: no default handler available"
     return f"could not find application '{name}'"
 
 

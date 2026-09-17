@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, List
 import httpx
 
 from .tools.context import get_ctx
-from .tools.registry import ToolRegistry
+from .tools.registry import ToolRegistry, looks_like_error
 
 log = logging.getLogger("aurora.agent")
 
@@ -74,7 +74,7 @@ async def route_laptop_tool(name: str, kwargs: Dict[str, Any]) -> tuple[str, boo
         )
     action, map_params = mapping
     result = await queue(action, "laptop", map_params(kwargs or {}))
-    return result, False
+    return result, looks_like_error(result)
 
 
 class AgentCore:
@@ -165,6 +165,12 @@ class AgentCore:
         tools_used: List[str] = []
         history = list(base_history)
         max_steps = int(os.environ.get("KIM_MAX_TOOL_STEPS", "20"))
+        # Hard result gate: Kim must not send a "done" message while unacknowledged
+        # tool failures exist. We track the outcomes of the latest tool batch and,
+        # if a final-answer turn follows a failing batch, force one corrective turn
+        # that replays the real results before the final message is accepted.
+        pending_failures: List[tuple[str, str, str]] = []
+        corrections = 0
         async with httpx.AsyncClient(timeout=90) as client:
             for _ in range(max_steps):
                 body = {"model": provider["model"], "messages": [{"role": "system", "content": "You are Kim, a concise practical technical personal agent. Inspect first. Never claim an action happened unless its tool succeeded. Any data change, message, device control, typing, file edit, or command requires user approval; ask for approval instead of bypassing it. For on-screen/desktop work, verify each step before moving on: after an action, run computer_action see (or describe) again to check the screen, then either proceed to the next step or retry with a corrected action. Keep taking steps until the user's goal is finished; only stop when you can show a verified result."}] + history, "tools": self._tools(), "tool_choice": "auto", "temperature": 0.2}
@@ -176,12 +182,21 @@ class AgentCore:
                 calls = assistant.get("tool_calls") or []
                 if not calls:
                     answer = str(assistant.get("content") or "I'm ready.").strip()
+                    # Corrective gate: do not emit a "done" message over a failed
+                    # batch. Force a rewrite grounded in the actual tool results.
+                    if pending_failures and corrections < 2:
+                        history.append({"role": "user", "content": _failure_report(pending_failures)})
+                        pending_failures = []
+                        corrections += 1
+                        continue
                     history.append({"role": "assistant", "content": answer})
                     return answer, tools_used, history
                 history.append(assistant)
+                batch_failures: List[tuple[str, str, str]] = []
                 for call in calls:
                     fn = call.get("function") or {}
                     name = str(fn.get("name", ""))
+                    call_id = call.get("id", name)
                     try:
                         args = json.loads(fn.get("arguments") or "{}")
                     except json.JSONDecodeError:
@@ -196,6 +211,21 @@ class AgentCore:
                         result, is_error = self._approval_text(name, args) + f" Approval ID: {approval['id']}.", True
                     else:
                         result, is_error = await self.registry.run(name, args)
+                    if is_error:
+                        batch_failures.append((name, call_id, result))
                     tools_used.append(name)
-                    history.append({"role": "tool", "tool_call_id": call.get("id", name), "content": ("ERROR: " if is_error else "") + result[:20_000]})
+                    history.append({"role": "tool", "tool_call_id": call_id, "content": ("ERROR: " if is_error else "") + result[:20_000]})
+                pending_failures = batch_failures
         raise RuntimeError("Kim reached the tool-step limit without producing a final answer")
+
+
+def _failure_report(failures: List[tuple[str, str, str]]) -> str:
+    """Ground-truth replay used by the hard result gate before a final answer."""
+    lines = [
+        "HARD RESULT CHECK: the following tool calls did NOT execute successfully. "
+        "Do not claim any of them happened. Correct your previous statement, report "
+        "exactly what failed, and say what still needs to be done before the goal is met.",
+    ]
+    for name, call_id, result in failures:
+        lines.append(f"- {name} (call id {call_id}): {(result or '').strip()[:700]}")
+    return "\n".join(lines)

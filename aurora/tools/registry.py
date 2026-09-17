@@ -6,6 +6,35 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 log = logging.getLogger("aurora.tools")
 
+# Substrings that mark a tool's string result as a failure even though the
+# tool returned without raising. Previously every non-exception result was
+# treated as success, so offline relays, "could not find", and timeouts all
+# read as green to the model and it confidently narrated actions that never
+# ran. Tools may also raise, or return a (result, True) tuple that already
+# marks the failure; the markers below are the safety net for string results.
+_ERROR_MARKERS = (
+    "error:",
+    "could not",
+    "couldn't",
+    "failed",
+    "failure",
+    "is offline",
+    "no action was executed",
+    "did not report a result",
+    "timed out",
+    "unsupported",
+    "unknown tool",
+    "cannot find",
+    "not installed",
+    "not reachable",
+    "not connected",
+)
+
+
+def looks_like_error(text: str) -> bool:
+    lowered = text.lower()
+    return any(marker in lowered for marker in _ERROR_MARKERS)
+
 
 @dataclass
 class Tool:
@@ -62,9 +91,18 @@ class ToolRegistry:
             res = tool.fn(**fargs)
             if inspect.isawaitable(res):
                 res = await asyncio.wait_for(res, timeout=tool.timeout)
+            if isinstance(res, tuple) and len(res) == 2 and isinstance(res[0], str):
+                res, is_error = res
+                text = str(res)[:200_000]
+                if is_error and not text.startswith("ERROR:"):
+                    text = f"ERROR: {text}"
+                return text, True if is_error else looks_like_error(text)
             if not isinstance(res, str):
                 res = str(res)
-            return res[:200_000], False
+            text = res[:200_000]
+            if looks_like_error(text):
+                return f"ERROR: {text}", True
+            return text, False
         except asyncio.TimeoutError:
             return f"Tool {name} timed out after {tool.timeout}s.", True
         except Exception as e:  # noqa: BLE001

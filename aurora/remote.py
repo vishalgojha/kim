@@ -607,12 +607,12 @@ class RemoteServer:
     async def queue_device_command(self, action: str, device_id: str, parameters: Dict[str, Any]) -> str:
         allowed = {"open_url", "open_app", "type_text", "press_key", "screenshot", "playwright_run", "browser_action", "computer_action"}
         if action not in allowed:
-            return f"unsupported device action: {action}"
+            return f"ERROR: unsupported device action: {action}"
         with self.commands_lock:
             device = self.devices.get(device_id, {})
             online = bool(device and time.time() - float(device.get("last_seen", 0)) < 15)
             if not online:
-                return f"device {device_id} is offline; no action was executed"
+                return f"ERROR: device {device_id} is offline; no action was executed"
             command_id = uuid.uuid4().hex
             command = {"id": command_id, "type": "device", "device_id": device_id, "action": action, "parameters": parameters, "created_at": time.time()}
             self.device_commands.append(command)
@@ -624,7 +624,7 @@ class RemoteServer:
             return await asyncio.wait_for(waiter, timeout=30)
         except asyncio.TimeoutError:
             self.device_waiters.pop(command_id, None)
-            return f"device {device_id} did not report a result within 30 seconds; action may not have executed"
+            return f"ERROR: device {device_id} did not report a result within 30 seconds; action may not have executed"
 
     def _check(self, handler: BaseHTTPRequestHandler) -> bool:
         # Let the trusted native desktop path authenticate first; it is intentionally
