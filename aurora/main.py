@@ -212,7 +212,10 @@ async def _desktop_device_command_loop(cfg: Dict[str, Any]) -> None:
                             tool_params = {"name": params.get("url") or params.get("name") or ""}
                         elif action == "open_app":
                             tool_params = {"name": params.get("name") or params.get("app_name") or params.get("package") or ""}
-                        if tool_name:
+                        if action in {"open_url", "open_app"} and not tool_params.get("name"):
+                            result = f"ERROR: no {'URL' if action == 'open_url' else 'app name'} was provided for {action}; nothing was opened"
+                            is_error = True
+                        elif tool_name:
                             result, is_error = await REGISTRY.run(tool_name, tool_params)
                         else:
                             result, is_error = f"unsupported desktop action: {action}", True
