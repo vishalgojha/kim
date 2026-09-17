@@ -55,11 +55,17 @@ approval/tool-calling pipeline. Voice always uses ElevenLabs; `/v1/chat` text
 prefers the Sarvam/default text brain unless `KIM_TEXT_BRAIN=elevenlabs`.
 
 For computer-agent desktop control, `computer_action` drives the laptop like a
-desktop agent: `see`/`ocr` read screen text, `click_label` clicks what it sees,
-plus mouse move/click/drag/scroll, typing, hotkeys, and window
-list/activate/move. Install once on the laptop: `sudo apt install -y
-tesseract-ocr xdotool` (Wayland input injection: `sudo apt install -y ydotool`
-+ `sudo systemctl enable --now ydotool`).
+desktop agent: `see`/`describe` read the screen (multimodal vision description
+when configured, OCR otherwise), `ocr` returns raw text, `click_label` clicks
+what it sees, plus mouse move/click/drag/scroll, typing, hotkeys, and window
+list/activate/move. It verifies in a loop — after each action it re-reads the
+screen before continuing or retrying, up to `KIM_MAX_TOOL_STEPS` (default 20).
+Install once on the laptop: `sudo apt install -y tesseract-ocr xdotool`
+(Wayland input injection: `sudo apt install -y ydotool` + `sudo systemctl
+enable --now ydotool`). To enable vision descriptions, set `KIM_VISION_API_KEY`
+(and `KIM_VISION_BASE_URL`/`KIM_VISION_MODEL` for a custom endpoint) or the
+primary brain key; the Sarvam v2 beta `gemma4` model (`/v2/chat/completions`)
+supports image input for this too.
 
 Prereqs: Python 3.11+, `ffmpeg`, and a working audio device. Linux can use `parec`/PulseAudio; macOS and Windows use the `sounddevice` fallback. `opencode` is optional, for the coding tool.
 

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 from .registry import tool
+from ..vision import describe_image, is_vision_configured
 
 
 def _ran(cmd: List[str]) -> Tuple[int, str]:
@@ -158,9 +159,9 @@ async def computer_action(action: str = "", x: int = 0, y: int = 0, dx: int = 0,
                           width: int = 0, height: int = 0) -> str:
     a = (action or "").strip().lower()
     if not a:
-        return "computer_action needs an action: move, click, dblclick, drag, scroll, type, key, window_list, window_activate, window_move, see, ocr, click_label"
+        return "computer_action needs an action: move, click, dblclick, drag, scroll, type, key, window_list, window_activate, window_move, see, describe, ocr, click_label"
 
-    if a in {"see", "ocr"}:
+    if a == "ocr":
         with tempfile.TemporaryDirectory() as tmp:
             png = str(Path(tmp) / "kim_screen.png")
             ok, cap = _capture(png)
@@ -169,9 +170,30 @@ async def computer_action(action: str = "", x: int = 0, y: int = 0, dx: int = 0,
             okl, ocr, words = _ocr(png)
             if not okl:
                 return cap + "; " + ocr
-            if a == "see":
-                return f"{cap}. Screen text: {ocr[:1500]}" if ocr.strip() else f"{cap}. No readable text detected."
         return ocr
+
+    if a in {"see", "describe"}:
+        with tempfile.TemporaryDirectory() as tmp:
+            png = str(Path(tmp) / "kim_screen.png")
+            ok, cap = _capture(png)
+            if not ok:
+                return cap
+            try:
+                data = Path(png).read_bytes()
+            except OSError:
+                data = b""
+            desc = (await describe_image(data)) if is_vision_configured() and data else ""
+            okl, ocr, words = _ocr(png)
+            if a == "describe":
+                if is_vision_configured() and desc and not desc.startswith("vision "):
+                    return f"{cap}. {desc}"
+                return f"{cap}. Screen text: {ocr[:1500]}" if okl and ocr.strip() else f"{cap}. No readable text detected."
+            parts = [cap]
+            if is_vision_configured() and desc and not desc.startswith("vision "):
+                parts.append(f"On-screen: {desc}")
+            if okl and ocr.strip():
+                parts.append(f"OCR text: {ocr[:2000]}")
+            return ". ".join(parts)
 
     if a == "click_label":
         if not text.strip():
@@ -288,7 +310,7 @@ async def computer_action(action: str = "", x: int = 0, y: int = 0, dx: int = 0,
     "computer_action",
     "Operate the laptop like a computer agent: see/ocr (see screen text), click_label (click text seen on screen), move/click/dblclick/drag/scroll (mouse), type/key (keyboard), window_list/window_activate/window_move (windows). Runs on the laptop relay only.",
     {
-        "action": {"type": "string", "description": "move, click, dblclick, drag, scroll, type, key, window_list, window_activate, window_move, see, ocr, click_label", "required": True},
+        "action": {"type": "string", "description": "move, click, dblclick, drag, scroll, type, key, window_list, window_activate, window_move, see, describe, ocr, click_label", "required": True},
         "x": {"type": "integer", "description": "absolute x coordinate", "required": False},
         "y": {"type": "integer", "description": "absolute y coordinate", "required": False},
         "dx": {"type": "integer", "description": "relative x for drag", "required": False},

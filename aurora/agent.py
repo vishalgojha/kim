@@ -164,9 +164,10 @@ class AgentCore:
     ) -> tuple[str, List[str], List[Dict[str, Any]]]:
         tools_used: List[str] = []
         history = list(base_history)
+        max_steps = int(os.environ.get("KIM_MAX_TOOL_STEPS", "20"))
         async with httpx.AsyncClient(timeout=90) as client:
-            for _ in range(8):
-                body = {"model": provider["model"], "messages": [{"role": "system", "content": "You are Kim, a concise practical technical personal agent. Inspect first. Never claim an action happened unless its tool succeeded. Any data change, message, device control, typing, file edit, or command requires user approval; ask for approval instead of bypassing it."}] + history, "tools": self._tools(), "tool_choice": "auto", "temperature": 0.2}
+            for _ in range(max_steps):
+                body = {"model": provider["model"], "messages": [{"role": "system", "content": "You are Kim, a concise practical technical personal agent. Inspect first. Never claim an action happened unless its tool succeeded. Any data change, message, device control, typing, file edit, or command requires user approval; ask for approval instead of bypassing it. For on-screen/desktop work, verify each step before moving on: after an action, run computer_action see (or describe) again to check the screen, then either proceed to the next step or retry with a corrected action. Keep taking steps until the user's goal is finished; only stop when you can show a verified result."}] + history, "tools": self._tools(), "tool_choice": "auto", "temperature": 0.2}
                 response = await client.post(provider["endpoint"], headers=provider["headers"], json=body)
                 if response.status_code >= 400:
                     raise RuntimeError(f"LLM request failed ({response.status_code}): {response.text[:500]}")
