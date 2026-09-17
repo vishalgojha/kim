@@ -443,7 +443,11 @@ class RemoteServer:
                         if action not in allowed:
                             raise ValueError(f"action must be one of {sorted(allowed)}")
                         target = str(data.get("device_id", "")).strip() or "laptop"
-                        result = owner._run(owner.queue_device_command(action, target, data.get("parameters", {})))
+                        params = dict(data.get("parameters") or {})
+                        for key in ("name", "app_name", "package", "url"):
+                            if key in data and key not in params:
+                                params[key] = data[key]
+                        result = owner._run(owner.queue_device_command(action, target, params))
                         self._reply(200, {"ok": True, "result": result})
                         return
                     if self.path.startswith("/v1/device/commands/") and self.path.endswith("/result"):
