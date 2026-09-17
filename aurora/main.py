@@ -207,11 +207,21 @@ async def _desktop_device_command_loop(cfg: Dict[str, Any]) -> None:
                             "browser_action": "browser_action",
                             "computer_action": "computer_action",
                         }.get(action)
-                        tool_params = params
+                        tool_keys = {
+                            "open_url": ("name",),
+                            "open_app": ("name",),
+                            "type_text": ("text",),
+                            "press_key": ("key",),
+                            "screenshot": ("path",),
+                            "playwright_run": ("url", "script", "timeout"),
+                            "browser_action": ("action", "x", "y", "text", "key", "amount"),
+                            "computer_action": ("action", "x", "y", "dx", "dy", "button", "text", "key", "title", "window", "amount", "delay_ms", "width", "height"),
+                        }
+                        tool_params = {k: params.get(k) for k in tool_keys.get(action, ()) if isinstance(params, dict) and k in params}
                         if action == "open_url":
-                            tool_params = {"name": params.get("url") or params.get("name") or ""}
+                            tool_params.setdefault("name", params.get("url") or params.get("name") or "")
                         elif action == "open_app":
-                            tool_params = {"name": params.get("name") or params.get("app_name") or params.get("package") or ""}
+                            tool_params.setdefault("name", params.get("name") or params.get("app_name") or params.get("package") or "")
                         if action in {"open_url", "open_app"} and not tool_params.get("name"):
                             result = f"ERROR: no {'URL' if action == 'open_url' else 'app name'} was provided for {action}; nothing was opened"
                             is_error = True

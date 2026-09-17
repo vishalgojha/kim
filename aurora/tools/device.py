@@ -32,7 +32,11 @@ async def device_command(
     queue = get_ctx().get("queue_device_command")
     if queue is None:
         return "ERROR: no connected device bridge is running; no action was executed"
+    action = action.strip().lower()
     params = dict(parameters or {})
-    params.setdefault("name", name or params.get("name") or app_name or params.get("app_name") or params.get("package") or "")
-    params.setdefault("url", url or params.get("url") or "")
-    return await queue(action.strip().lower(), device_id.strip() or "laptop", params)
+    alias_name = name or app_name or params.get("name") or params.get("app_name") or params.get("package")
+    if alias_name and action in ("open_app",):
+        params.setdefault("name", alias_name)
+    if url and action == "open_url":
+        params.setdefault("url", url)
+    return await queue(action, device_id.strip() or "laptop", params)
