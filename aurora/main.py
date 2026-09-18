@@ -134,16 +134,14 @@ async def _remote_command_loop(cfg: Dict[str, Any]) -> None:
 
     remote = cfg.get("remote", {})
     domain = str(remote.get("domain", "")).strip().rstrip("/")
-    pin_env = str(remote.get("pin_env", "KIM_REMOTE_PIN"))
-    pin = os.environ.get(pin_env, "").strip()
-    if not domain or not pin:
-        log.warning("remote command relay disabled: domain or KIM_REMOTE_PIN missing")
+    if not domain:
+        log.warning("remote command relay disabled: domain missing")
         return
     command_path = Path.home() / ".aurora" / "voice_command"
     async with httpx.AsyncClient(timeout=8.0) as client:
         while True:
             try:
-                response = await client.get(f"https://{domain}/v1/commands/next", headers={"X-Kim-Pin": pin})
+                response = await client.get(f"https://{domain}/v1/commands/next")
                 if response.is_success:
                     command = (response.json() or {}).get("command") or {}
                     action = command.get("action")
@@ -154,7 +152,6 @@ async def _remote_command_loop(cfg: Dict[str, Any]) -> None:
                         result, is_error = await REGISTRY.run(command.get("name", ""), command.get("parameters", {}))
                         await client.post(
                             f"https://{domain}/v1/commands/{command.get('approval_id', '')}/result",
-                            headers={"X-Kim-Pin": pin},
                             json={"result": result, "is_error": is_error},
                         )
             except asyncio.CancelledError:
@@ -200,10 +197,8 @@ async def _desktop_device_command_loop(cfg: Dict[str, Any]) -> None:
 
     remote = cfg.get("remote", {})
     domain = str(remote.get("domain", "")).strip().rstrip("/")
-    pin_env = str(remote.get("pin_env", "KIM_REMOTE_PIN"))
-    pin = os.environ.get(pin_env, "").strip()
-    if not domain or not pin:
-        log.warning("desktop device relay disabled: domain or KIM_REMOTE_PIN missing")
+    if not domain:
+        log.warning("desktop device relay disabled: domain missing")
         return
     device_id = os.environ.get("KIM_DESKTOP_DEVICE_ID", "laptop").strip() or "laptop"
     base = f"https://{domain}"
@@ -211,16 +206,13 @@ async def _desktop_device_command_loop(cfg: Dict[str, Any]) -> None:
     async with httpx.AsyncClient(timeout=12.0) as client:
         while True:
             try:
-                headers = {"X-Kim-Pin": pin}
                 await client.post(
                     f"{base}/v1/device/heartbeat",
-                    headers=headers,
                     json={"device_id": device_id, "capabilities": capabilities},
                 )
                 response = await client.get(
                     f"{base}/v1/device/commands/next",
                     params={"device_id": device_id},
-                    headers=headers,
                 )
                 if response.is_success:
                     command = (response.json() or {}).get("command") or {}

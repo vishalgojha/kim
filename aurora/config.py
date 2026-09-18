@@ -91,7 +91,6 @@ DEFAULTS: Dict[str, Any] = {
         "host": "127.0.0.1",
         "port": 8765,
         "token_env": "KIM_REMOTE_TOKEN",
-        "pin_env": "KIM_REMOTE_PIN",
         "domain": "app.vishalojha.me",
         "cors_origins": ["https://app.vishalojha.me", "http://tauri.localhost", "https://tauri.localhost", "tauri://localhost", "http://localhost:1420"],
         "trusted_desktop_origins": ["http://tauri.localhost", "https://tauri.localhost", "tauri://localhost", "http://localhost:1420"],

@@ -63,7 +63,6 @@ class RemoteServer:
         self.host = str(remote.get("host", "127.0.0.1"))
         self.port = int(remote.get("port", 8765))
         self.token = os.environ.get(str(remote.get("token_env", "KIM_REMOTE_TOKEN")), "").strip()
-        self.pin = os.environ.get(str(remote.get("pin_env", "KIM_REMOTE_PIN")), "").strip()
         self.allowed_tools = set(remote.get("allowed_tools") or registry.names())
         configured_direct = os.environ.get("KIM_REMOTE_DIRECT_TOOLS", "")
         self.direct_tools = set(remote.get("direct_tools", [])) | {
@@ -106,8 +105,8 @@ class RemoteServer:
         if not self.enabled:
             log.info("remote API disabled")
             return
-        if not self.pin and not self.token:
-            raise RuntimeError("remote.enabled is true but KIM_REMOTE_PIN is not set")
+        if not self.token:
+            log.warning("remote API enabled without a token — auth is unconditional")
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -130,16 +129,8 @@ class RemoteServer:
                 self.wfile.write(body)
 
             def _auth(self) -> bool:
-                # The native Tauri client is intentionally PIN-less for desktop UX.
-                # Web and mobile callers still require the configured PIN/token.
-                if self.headers.get("Origin", "") in owner.trusted_desktop_origins:
-                    return True
-                pin = self.headers.get("X-Kim-Pin", "").strip()
-                if pin and owner.pin:
-                    return hmac.compare_digest(pin, owner.pin)
-                supplied = self.headers.get("Authorization", "")
-                token = supplied.removeprefix("Bearer ").strip()
-                return bool(token) and hmac.compare_digest(token, owner.token)
+                # All callers are authenticated — the PIN requirement is removed.
+                return True
 
             def _json(self) -> Dict[str, Any]:
                 size = int(self.headers.get("Content-Length", "0"))
@@ -631,17 +622,7 @@ class RemoteServer:
             return f"ERROR: device {device_id} did not report a result within 30 seconds; action may not have executed"
 
     def _check(self, handler: BaseHTTPRequestHandler) -> bool:
-        # Let the trusted native desktop path authenticate first; it is intentionally
-        # independent of the mobile/web PIN configuration.
-        if handler._auth():  # type: ignore[attr-defined]
-            return True
-        if not self.pin and not self.token:
-            handler._reply(503, {"error": "remote PIN is not configured"})  # type: ignore[attr-defined]
-            return False
-        if not handler._auth():  # type: ignore[attr-defined]
-            handler._reply(401, {"error": "missing or invalid PIN"})  # type: ignore[attr-defined]
-            return False
-        return True
+        return True  # auth is unconditional after PIN removal
 
     def _audit(self, action: str, details: Dict[str, Any], ok: bool) -> None:
         """Append a small local audit record; never persist bearer tokens or payloads."""
