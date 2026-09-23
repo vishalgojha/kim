@@ -41,10 +41,14 @@ HOSTED_LAPTOP_TOOLS = {
     "read_file", "write_file", "edit_file", "file_info", "files_list", "files_search", "document_extract",
     "opencode_run",
     "schedule_remind", "schedule_every", "list_schedules", "schedule_cancel",
-    "whatsapp_search", "whatsapp_recent", "whatsapp_chats",
+    "whatsapp_search", "whatsapp_property_search", "whatsapp_recent", "whatsapp_chats",
 }
 
 # Which device_command action can carry a laptop tool from the hosted brain.
+def _without_none(mapping: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: v for k, v in mapping.items() if v is not None}
+
+
 LAPTOP_DEVICE_ACTION = {
     "launch_app": ("open_app", lambda p: {"name": p.get("name") or p.get("app_name") or ""}),
     "navigate_browser": ("open_url", lambda p: {"url": p.get("url") or p.get("name") or ""}),
@@ -53,6 +57,10 @@ LAPTOP_DEVICE_ACTION = {
     "type_text": ("type_text", lambda p: {"text": p.get("text", "")}),
     "press_key": ("press_key", lambda p: {"key": p.get("key", "")}),
     "screenshot": ("screenshot", lambda p: {}),
+    "whatsapp_search": ("whatsapp_search", lambda p: _without_none({"query": p.get("query", ""), "chat": p.get("chat", ""), "limit": p.get("limit")})),
+    "whatsapp_property_search": ("whatsapp_property_search", lambda p: _without_none({"query": p.get("query", ""), "limit": p.get("limit")})),
+    "whatsapp_recent": ("whatsapp_recent", lambda p: _without_none({"limit": p.get("limit")})),
+    "whatsapp_chats": ("whatsapp_chats", lambda p: _without_none({"query": p.get("query", "")})),
 }
 
 # Cloud plus routing tools: what the hosted brain may see and run by itself.

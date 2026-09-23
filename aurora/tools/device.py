@@ -10,16 +10,17 @@ from .registry import tool
 
 @tool(
     "device_command",
-"Execute a physical action on the user's connected Linux laptop and wait for its result. Use this from a phone, web, or desktop chat to control the laptop: open_app (launch an app), open_url (open a link in the browser), browser_action (click/type/key/scroll the visible browser window), computer_action (computer-agent desktop control: see/ocr the screen, click_label, mouse move/click/drag/scroll, type, keys, window list/activate/move), type_text, press_key, screenshot, or playwright_run. Never claim the action succeeded unless the returned result confirms it; the laptop must be online for an action to run.",
+    "Execute a physical action on the user's connected Linux laptop and wait for its result. Use this from a phone, web, or desktop chat to control the laptop: open_app (launch an app), open_url (open a link in the browser), browser_action (click/type/key/scroll the visible browser window), computer_action (computer-agent desktop control: see/ocr the screen, click_label, mouse move/click/drag/scroll, type, keys, window list/activate/move), type_text, press_key, screenshot, or playwright_run. For WhatsApp, use whatsapp_search (search the user's local WhatsApp messages for a keyword/query), whatsapp_property_search (primary for property, flat, rental, broker or listing searches), whatsapp_recent (recent messages), or whatsapp_chats (list chats/contacts) — these run on the laptop against the local WhatsApp data. Never claim the action succeeded unless the returned result confirms it; the laptop must be online for an action to run.",
     {
         "device_id": {"type": "string", "description": "target device, normally 'laptop'", "required": False},
-        "action": {"type": "string", "description": "open_app, open_url, browser_action, computer_action, type_text, press_key, screenshot, or playwright_run", "required": True},
-        "parameters": {"type": "object", "description": "Action parameters: for open_app use name, for open_url use url, for type_text use text, for press_key use key, for screenshot use path, for browser_action use action/x/y/text/key/amount, for computer_action use action/x/y/dx/dy/button/text/key/title/window/amount/width/height", "required": False},
+        "action": {"type": "string", "description": "open_app, open_url, browser_action, computer_action, type_text, press_key, screenshot, playwright_run, whatsapp_search, whatsapp_property_search, whatsapp_recent, or whatsapp_chats", "required": True},
+        "parameters": {"type": "object", "description": "Action parameters: for open_app use name, for open_url use url, for type_text use text, for press_key use key, for screenshot use path, for browser_action use action/x/y/text/key/amount, for computer_action use action/x/y/dx/dy/button/text/key/title/window/amount/width/height, for whatsapp_search/whatsapp_property_search use query, for whatsapp_recent use limit, for whatsapp_chats use query", "required": False},
         "name": {"type": "string", "description": "For open_app: the app to launch (Chrome, Firefox, files, editor...). Convenience alias for parameters.name.", "required": False},
         "url": {"type": "string", "description": "For open_url: the URL to open in the browser. Convenience alias for parameters.url.", "required": False},
         "app_name": {"type": "string", "description": "Alternate alias for name in open_app. Convenience alias for parameters.name.", "required": False},
         "text": {"type": "string", "description": "For type_text or browser_action/computer_action: the text to type. Convenience alias for parameters.text.", "required": False},
         "key": {"type": "string", "description": "For press_key or browser_action/computer_action: the key to press. Convenience alias for parameters.key.", "required": False},
+        "query": {"type": "string", "description": "For whatsapp_search / whatsapp_property_search / whatsapp_chats: the keyword or requirements to search for in local WhatsApp messages. Convenience alias for parameters.query.", "required": False},
     },
     timeout=40,
 )
@@ -32,6 +33,7 @@ async def device_command(
     app_name: str | None = None,
     text: str | None = None,
     key: str | None = None,
+    query: str | None = None,
 ) -> str:
     queue = get_ctx().get("queue_device_command")
     if queue is None:
@@ -46,6 +48,9 @@ async def device_command(
     payload_aliases = {
         "type_text": ("text", text or params.get("text")),
         "press_key": ("key", key or params.get("key")),
+        "whatsapp_search": ("query", query or params.get("query")),
+        "whatsapp_property_search": ("query", query or params.get("query")),
+        "whatsapp_chats": ("query", query or params.get("query")),
     }
     for act, (param_key, value) in payload_aliases.items():
         if act == action and value:

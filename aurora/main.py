@@ -167,6 +167,8 @@ _REQUIRED_PARAMS: Dict[str, tuple[str, ...]] = {
     "browser_action": ("action",),
     "computer_action": ("action",),
     "playwright_run": ("url",),
+    "whatsapp_search": ("query",),
+    "whatsapp_property_search": ("query",),
 }
 
 _PARAM_EXAMPLES: Dict[str, str] = {
@@ -175,6 +177,8 @@ _PARAM_EXAMPLES: Dict[str, str] = {
     "browser_action": "{'action': 'browser_action', 'parameters': {'action': 'type', 'text': '<what to type>'}}",
     "computer_action": "{'action': 'computer_action', 'parameters': {'action': 'type', 'text': '<what to type>'}}",
     "playwright_run": "{'action': 'playwright_run', 'parameters': {'url': 'https://...'}}",
+    "whatsapp_search": "{'action': 'whatsapp_search', 'parameters': {'query': 'broker flat Hinjewadi'}}",
+    "whatsapp_property_search": "{'action': 'whatsapp_property_search', 'parameters': {'query': '2BHK pune rent'}}",
 }
 
 
@@ -202,7 +206,7 @@ async def _desktop_device_command_loop(cfg: Dict[str, Any]) -> None:
         return
     device_id = os.environ.get("KIM_DESKTOP_DEVICE_ID", "laptop").strip() or "laptop"
     base = f"https://{domain}"
-    capabilities = ["open_url", "open_app", "type_text", "press_key", "screenshot", "playwright_run", "browser_action", "computer_action"]
+    capabilities = ["open_url", "open_app", "type_text", "press_key", "screenshot", "playwright_run", "browser_action", "computer_action", "whatsapp_search", "whatsapp_property_search", "whatsapp_recent", "whatsapp_chats"]
     async with httpx.AsyncClient(timeout=12.0) as client:
         while True:
             try:
@@ -228,6 +232,10 @@ async def _desktop_device_command_loop(cfg: Dict[str, Any]) -> None:
                             "playwright_run": "playwright_run",
                             "browser_action": "browser_action",
                             "computer_action": "computer_action",
+                            "whatsapp_search": "whatsapp_search",
+                            "whatsapp_property_search": "whatsapp_property_search",
+                            "whatsapp_recent": "whatsapp_recent",
+                            "whatsapp_chats": "whatsapp_chats",
                         }.get(action)
                         tool_keys = {
                             "open_url": ("name",),
@@ -238,6 +246,10 @@ async def _desktop_device_command_loop(cfg: Dict[str, Any]) -> None:
                             "playwright_run": ("url", "script", "timeout"),
                             "browser_action": ("action", "x", "y", "text", "key", "amount"),
                             "computer_action": ("action", "x", "y", "dx", "dy", "button", "text", "key", "title", "window", "amount", "delay_ms", "width", "height"),
+                            "whatsapp_search": ("query", "chat", "limit"),
+                            "whatsapp_property_search": ("query", "limit"),
+                            "whatsapp_recent": ("limit",),
+                            "whatsapp_chats": ("query",),
                         }
                         tool_params = {k: params.get(k) for k in tool_keys.get(action, ()) if isinstance(params, dict) and k in params}
                         if action == "open_url":

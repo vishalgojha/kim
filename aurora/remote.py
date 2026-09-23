@@ -599,7 +599,7 @@ class RemoteServer:
         log.info("remote API listening on %s:%s", self.host, self.port)
 
     async def queue_device_command(self, action: str, device_id: str, parameters: Dict[str, Any]) -> str:
-        allowed = {"open_url", "open_app", "type_text", "press_key", "screenshot", "playwright_run", "browser_action", "computer_action"}
+        allowed = {"open_url", "open_app", "type_text", "press_key", "screenshot", "playwright_run", "browser_action", "computer_action", "whatsapp_search", "whatsapp_property_search", "whatsapp_recent", "whatsapp_chats"}
         if action not in allowed:
             return f"ERROR: unsupported device action: {action}"
         with self.commands_lock:
