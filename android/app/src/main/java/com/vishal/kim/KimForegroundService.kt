@@ -6,6 +6,7 @@ import android.content.Intent
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.AudioManager
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
@@ -16,6 +17,7 @@ import java.util.concurrent.Executors
 import android.os.IBinder
 
 class KimForegroundService : Service() {
+    @Volatile private var torchOn = false
     private val executor = Executors.newSingleThreadExecutor()
     private val handler = Handler(Looper.getMainLooper())
     private val deviceId by lazy { KimPrefs.deviceId(this) }
@@ -46,9 +48,9 @@ class KimForegroundService : Service() {
         "notify" -> { getSystemService(NotificationManager::class.java).notify(1002, Notification.Builder(this, "kim").setContentTitle("Kim").setContentText(p.optString("text", "Kim notification")).setSmallIcon(android.R.drawable.ic_dialog_info).build()); "notified" }
         "volume" -> { getSystemService(AudioManager::class.java).adjustVolume(if (p.optString("direction") == "down") AudioManager.ADJUST_LOWER else AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI); "changed" }
         "media" -> { val intent = Intent(Intent.ACTION_MEDIA_BUTTON); intent.putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)); sendOrderedBroadcast(intent, null); "toggled" }
-        "flashlight" -> { val cm = getSystemService(Context.CAMERA_SERVICE) as CameraManager; val camId = cm.cameraIdList.firstOrNull { cm.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true }; if (camId != null) { cm.setTorchMode(camId, !cm.getTorchMode(camId)); "toggled" } else "no camera" }
-        "type_text" -> { val text = p.optString("text", "").replace(Regex("""\s"""), "%20"); val proc = Runtime.getRuntime().exec(arrayOf("input", "text", text)); proc.waitFor(); "typed" }
-        "press_key" -> { val key = p.optString("key", "KEYCODE_ENTER"); Runtime.getRuntime().exec(arrayOf("input", "keyevent", key)).waitFor(); "pressed" }
+        "flashlight" -> { val cm = getSystemService(Context.CAMERA_SERVICE) as CameraManager; val camId = cm.cameraIdList.firstOrNull { cm.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true }; if (camId != null) { torchOn = !torchOn; cm.setTorchMode(camId, torchOn); if (torchOn) "on" else "off" } else "no camera" }
+        "type_text" -> { val text = p.optString("text", ""); if (!KimAccessibilityService.typeText(text)) { Runtime.getRuntime().exec(arrayOf("input", "text", text)).waitFor() }; "typed" }
+        "press_key" -> { val key = p.optString("key", "KEYCODE_ENTER"); if (!KimAccessibilityService.pressKey(key)) { Runtime.getRuntime().exec(arrayOf("input", "keyevent", key)).waitFor() }; "pressed" }
         "screenshot" -> { val proc = Runtime.getRuntime().exec(arrayOf("screencap", "-p")); val png = proc.inputStream.readBytes(); val out = File(filesDir, "screenshot.png"); FileOutputStream(out).use { it.write(png) }; "saved ${out.absolutePath}" }
         else -> error("unsupported phone action")
     }
