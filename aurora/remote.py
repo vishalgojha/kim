@@ -1,6 +1,6 @@
-"""Authenticated remote control plane for Kim.
+"""Remote control plane for Kim.
 
-The API is deliberately opt-in and binds to localhost by default. Put it behind
+The API is opt-in and binds to localhost by default. Put it behind
 an authenticated private tunnel/reverse proxy before exposing it on the public
 internet.
 """
@@ -8,7 +8,6 @@ internet.
 from __future__ import annotations
 
 import asyncio
-import hmac
 import json
 import logging
 import os
@@ -144,7 +143,7 @@ class RemoteServer:
                 if origin in owner.cors_origins:
                     self.send_header("Access-Control-Allow-Origin", origin)
                     self.send_header("Vary", "Origin")
-                self.send_header("Access-Control-Allow-Headers", "Authorization, X-Kim-Pin, X-Kim-Client, Content-Type")
+                self.send_header("Access-Control-Allow-Headers", "Authorization, X-Kim-Client, Content-Type")
                 self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
                 self.end_headers()
 

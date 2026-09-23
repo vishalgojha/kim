@@ -1,11 +1,14 @@
 package com.vishal.kim
 
 import android.app.*
+import android.content.Context
 import android.content.Intent
-import android.net.Uri
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
 import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
+import android.view.KeyEvent
 import org.json.JSONObject
 import java.util.concurrent.Executors
 import android.os.IBinder
@@ -40,6 +43,8 @@ class KimForegroundService : Service() {
         "open_app" -> { val intent = packageManager.getLaunchIntentForPackage(p.getString("package")) ?: error("app not installed"); intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); startActivity(intent); "opened" }
         "notify" -> { getSystemService(NotificationManager::class.java).notify(1002, Notification.Builder(this, "kim").setContentTitle("Kim").setContentText(p.optString("text", "Kim notification")).setSmallIcon(android.R.drawable.ic_dialog_info).build()); "notified" }
         "volume" -> { getSystemService(AudioManager::class.java).adjustVolume(if (p.optString("direction") == "down") AudioManager.ADJUST_LOWER else AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI); "changed" }
+        "media" -> { val intent = Intent(Intent.ACTION_MEDIA_BUTTON); intent.putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)); sendOrderedBroadcast(intent, null); "toggled" }
+        "flashlight" -> { val cm = getSystemService(Context.CAMERA_SERVICE) as CameraManager; val camId = cm.cameraIdList.firstOrNull { cm.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true }; if (camId != null) { cm.setTorchMode(camId, !cm.getTorchMode(camId)); "toggled" } else "no camera" }
         else -> error("unsupported phone action")
     }
     override fun onDestroy() { handler.removeCallbacks(loop); executor.shutdownNow(); super.onDestroy() }
