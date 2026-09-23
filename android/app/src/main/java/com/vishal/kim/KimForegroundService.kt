@@ -10,6 +10,8 @@ import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
 import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.Executors
 import android.os.IBinder
 
@@ -45,6 +47,9 @@ class KimForegroundService : Service() {
         "volume" -> { getSystemService(AudioManager::class.java).adjustVolume(if (p.optString("direction") == "down") AudioManager.ADJUST_LOWER else AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI); "changed" }
         "media" -> { val intent = Intent(Intent.ACTION_MEDIA_BUTTON); intent.putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)); sendOrderedBroadcast(intent, null); "toggled" }
         "flashlight" -> { val cm = getSystemService(Context.CAMERA_SERVICE) as CameraManager; val camId = cm.cameraIdList.firstOrNull { cm.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true }; if (camId != null) { cm.setTorchMode(camId, !cm.getTorchMode(camId)); "toggled" } else "no camera" }
+        "type_text" -> { val text = p.optString("text", "").replace(Regex("""\s"""), "%20"); val proc = Runtime.getRuntime().exec(arrayOf("input", "text", text)); proc.waitFor(); "typed" }
+        "press_key" -> { val key = p.optString("key", "KEYCODE_ENTER"); Runtime.getRuntime().exec(arrayOf("input", "keyevent", key)).waitFor(); "pressed" }
+        "screenshot" -> { val proc = Runtime.getRuntime().exec(arrayOf("screencap", "-p")); val png = proc.inputStream.readBytes(); val out = File(filesDir, "screenshot.png"); FileOutputStream(out).use { it.write(png) }; "saved ${out.absolutePath}" }
         else -> error("unsupported phone action")
     }
     override fun onDestroy() { handler.removeCallbacks(loop); executor.shutdownNow(); super.onDestroy() }
