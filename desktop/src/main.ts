@@ -43,7 +43,7 @@ const state = (() => {
     page: "chat" as Page,
     compact: localStorage.getItem("kim.view") !== "full",
     base: (configVersion === "2" && savedServer && !pointsToLocalMachine ? savedServer : originBase),
-    pin: localStorage.getItem("kim.pin") || "",
+    pin: "",
     activeUser: "Vishal",
     conversationId: "",
     messages: [] as { role: string; text: string; attachmentName?: string; toolsUsed?: string[] }[],
@@ -52,10 +52,6 @@ const state = (() => {
     voice: "online",
     panelOpen: localStorage.getItem("kim.panel") !== "closed",
   };
-  // The WebView bridge passes the stored key and active user up front on mobile.
-  if (native && typeof native.getPin === "function") {
-    try { const stored = String(native.getPin() || ""); if (stored) st.pin = stored; } catch { /* ignore */ }
-  }
   // The WebView bridge passes the active user up front on mobile.
   if (native && typeof native.getUser === "function") {
     try { st.activeUser = String(native.getUser() || "Vishal"); } catch { /* ignore */ }
@@ -78,7 +74,6 @@ const api = async (path: string, init: RequestInit = {}) => {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
   headers.set("X-Kim-Client", "kim-desktop");
-  if (state.pin) headers.set("X-Kim-Pin", state.pin);
   const response = await fetch(`${state.base}${path}`, { ...init, headers });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || data.message || `Request failed (${response.status})`);
@@ -224,7 +219,6 @@ function chat() {
     const input = document.querySelector<HTMLInputElement>("#chat-input")!;
     const text = input.value.trim();
     if (!text) return;
-    if (!state.pin) { saveMessage({ role: "assistant", text: "Open Settings and add your Kim PIN before chatting." }); render(); return; }
     input.value = "";
     const attachment = state.attachment;
     state.attachment = null;
@@ -331,7 +325,7 @@ async function downloadMusic(jobId: string) {
     try { native.download(url, jobId); return; } catch { /* fall through to web download */ }
   }
   try {
-    const response = await fetch(url, { headers: { "X-Kim-Pin": state.pin } });
+    const response = await fetch(url);
     if (!response.ok) throw new Error(`download failed (${response.status})`);
     const blob = await response.blob();
     const a = document.createElement("a");

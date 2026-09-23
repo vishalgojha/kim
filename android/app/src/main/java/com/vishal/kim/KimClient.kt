@@ -40,7 +40,6 @@ class KimClient(private val baseUrl: String, private val token: String, private 
         // Tool calls and ElevenLabs replies can take longer than a normal API
         // request. Twelve seconds caused Android to show a false timeout.
         connection.connectTimeout = 15000; connection.readTimeout = 130000
-        connection.setRequestProperty("X-Kim-Pin", token)
         if (user.isNotBlank()) connection.setRequestProperty("X-Kim-User", user)
         connection.setRequestProperty("Content-Type", "application/json")
         if (body != null) { connection.doOutput = true; connection.outputStream.use { it.write(body.toByteArray()) } }

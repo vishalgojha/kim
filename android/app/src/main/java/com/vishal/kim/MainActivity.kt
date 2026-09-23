@@ -102,8 +102,7 @@ class MainActivity : ComponentActivity() {
                 .setDescription("Downloading generated music")
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setDestinationInExternalFilesDir(host, android.os.Environment.DIRECTORY_MUSIC, "$jobId.mp3")
-                .addRequestHeader("X-Kim-Pin", pin)
-                .addRequestHeader("X-Kim-User", user)
+                 .addRequestHeader("X-Kim-User", user)
             host.getSystemService(DownloadManager::class.java).enqueue(request)
         }
     }
