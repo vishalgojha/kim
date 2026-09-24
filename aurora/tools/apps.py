@@ -44,6 +44,33 @@ _APP_FALLBACKS: dict[str, tuple[str, ...]] = {k: _EDITOR_FALLBACKS for k in _EDI
 _APP_KIND_LABEL = {"notepad": "a text editor", "notepad++": "a text editor", "text editor": "a text editor", "texteditor": "a text editor", "editor": "a text editor", "gedit": "gedit or an equivalent text editor"}
 
 
+def _browser_binary() -> str | None:
+    """Resolve a real browser executable, never the ambiguous xdg default handler."""
+    for candidate in (
+        "google-chrome", "google-chrome-stable", "chromium", "chromium-browser",
+        "brave-browser", "microsoft-edge", "firefox",
+    ):
+        path = shutil.which(candidate)
+        if path:
+            return path
+    return None
+
+
+async def _open_url_in_browser(target: str) -> str:
+    browser = _browser_binary()
+    if not browser:
+        return "could not open the URL: no browser (chrome/chromium/brave/firefox) is installed"
+    try:
+        await asyncio.create_subprocess_exec(
+            browser, target,
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return f"opened the URL in {os.path.basename(browser)}"
+    except Exception as e:
+        return f"failed to open the URL in {os.path.basename(browser)}: {e}"
+
+
 async def _navigate_browser_impl(url: str) -> str:
     target = url.strip()
     if len(target) > 2_000 or not target.startswith(("http://", "https://")):
@@ -68,8 +95,7 @@ async def _navigate_browser_impl(url: str) -> str:
                 return f"navigated the existing {browser_class} window"
             except (asyncio.TimeoutError, OSError):
                 continue
-    open_default(target)
-    return "no open browser window was found; opened the URL with the default browser"
+    return await _open_url_in_browser(target)
 
 
 async def _browser_action_impl(action: str, x: int = 0, y: int = 0, text: str = "", key: str = "", amount: int = 0) -> str:
@@ -171,11 +197,15 @@ async def _launch_app_impl(name: str) -> str:
             "but none of gedit/kate/xed/geany/code/nano/vim is installed. "
             "Recommend installing one (e.g. 'sudo apt install gedit') or ask the user for an app name."
         )
-    # xdg-open / the default handler cannot confirm anything fired; only use
-    # them for URLs or existing files, never for a guessed app name.
+    # Open URLs in a real browser binary (Chrome first) instead of the
+    # ambiguous xdg default handler, which can resolve to the ChatGPT/Codex
+    # app on systems that register themselves for http/https. Existing files
+    # still go through the default handler.
     looks_like_url = target.startswith(("http://", "https://", "www."))
+    if looks_like_url:
+        return await _open_url_in_browser(target)
     looks_like_path = "/" in target or "\\" in target or os.path.isfile(os.path.expanduser(target))
-    if looks_like_url or looks_like_path:
+    if looks_like_path:
         xdg = shutil.which("xdg-open")
         if xdg:
             try:
