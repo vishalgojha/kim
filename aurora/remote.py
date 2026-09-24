@@ -388,6 +388,40 @@ class RemoteServer:
                     return
                 try:
                     data = self._json()
+                    if self.path == "/v1/whatsapp/inbound":
+                        expected = os.environ.get("KIM_WHATSAPP_INBOUND_TOKEN", "").strip()
+                        if expected and self.headers.get("X-Kim-WhatsApp-Token", "") != expected:
+                            self._reply(403, {"ok": False, "error": "invalid whatsapp webhook token"})
+                            return
+                        chat = str(data.get("chat", "")).strip()[:120]
+                        message = str(data.get("message", "")).strip()
+                        if not chat or not message:
+                            self._reply(200, {"ok": True, "reply": ""})
+                            return
+                        session_id = f"whatsapp:{chat}"
+                        reply_text = ""
+                        if owner.prefer_agent:
+                            try:
+                                result = owner._run(owner.agent.chat(session_id, message, owner.create_approval))
+                                reply_text = str(result.get("message", "")).strip()
+                            except Exception as exc:  # noqa: BLE001
+                                owner.last_agent_error = str(exc)[:500]
+                                log.warning("Kim agent chat failed for whatsapp inbound; falling back to text chat: %s", exc)
+                                if owner.text_chat is None:
+                                    raise
+                                result = owner._run(owner.text_chat.chat(session_id, message, owner.create_approval, "whatsapp"))
+                                reply_text = str(result.get("message", "")).strip()
+                        elif owner.text_chat is not None:
+                            result = owner._run(owner.text_chat.chat(session_id, message, owner.create_approval, "whatsapp"))
+                            reply_text = str(result.get("message", "")).strip()
+                        else:
+                            result = owner._run(owner.agent.chat(session_id, message, owner.create_approval))
+                            reply_text = str(result.get("message", "")).strip()
+                        if not reply_text:
+                            reply_text = "Sorry — I hit a snag handling that. Try again in a moment."
+                        owner._audit("whatsapp_inbound", {"chat": chat[:60], "message_id": str(data.get("message_id", ""))[:60]}, True)
+                        self._reply(200, {"ok": True, "reply": reply_text[:4000]})
+                        return
                     if self.path == "/v1/propai/disconnect":
                         owner._disconnect_propai()
                         self._reply(200, {"ok": True, "connected": False})
@@ -430,6 +464,7 @@ class RemoteServer:
                             "open_url", "open_app", "media", "volume", "flashlight", "notify",
                             "type_text", "press_key", "screenshot", "playwright_run", "browser_action", "computer_action",
                             "whatsapp_search", "whatsapp_property_search", "whatsapp_recent", "whatsapp_chats",
+                            "whatsapp_send",
                         }
                         if action not in allowed:
                             raise ValueError(f"action must be one of {sorted(allowed)}")
@@ -600,7 +635,7 @@ class RemoteServer:
         log.info("remote API listening on %s:%s", self.host, self.port)
 
     async def queue_device_command(self, action: str, device_id: str, parameters: Dict[str, Any]) -> str:
-        allowed = {"open_url", "open_app", "type_text", "press_key", "screenshot", "playwright_run", "browser_action", "computer_action", "whatsapp_search", "whatsapp_property_search", "whatsapp_recent", "whatsapp_chats"}
+        allowed = {"open_url", "open_app", "type_text", "press_key", "screenshot", "playwright_run", "browser_action", "computer_action", "whatsapp_search", "whatsapp_property_search", "whatsapp_recent", "whatsapp_chats", "whatsapp_send"}
         if action not in allowed:
             return f"ERROR: unsupported device action: {action}"
         with self.commands_lock:

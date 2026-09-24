@@ -169,6 +169,7 @@ _REQUIRED_PARAMS: Dict[str, tuple[str, ...]] = {
     "playwright_run": ("url",),
     "whatsapp_search": ("query",),
     "whatsapp_property_search": ("query",),
+    "whatsapp_send": ("recipient", "message"),
 }
 
 _PARAM_EXAMPLES: Dict[str, str] = {
@@ -206,7 +207,7 @@ async def _desktop_device_command_loop(cfg: Dict[str, Any]) -> None:
         return
     device_id = os.environ.get("KIM_DESKTOP_DEVICE_ID", "laptop").strip() or "laptop"
     base = f"https://{domain}"
-    capabilities = ["open_url", "open_app", "type_text", "press_key", "screenshot", "playwright_run", "browser_action", "computer_action", "whatsapp_search", "whatsapp_property_search", "whatsapp_recent", "whatsapp_chats"]
+    capabilities = ["open_url", "open_app", "type_text", "press_key", "screenshot", "playwright_run", "browser_action", "computer_action", "whatsapp_search", "whatsapp_property_search", "whatsapp_recent", "whatsapp_chats", "whatsapp_send"]
     async with httpx.AsyncClient(timeout=12.0) as client:
         while True:
             try:
@@ -236,6 +237,7 @@ async def _desktop_device_command_loop(cfg: Dict[str, Any]) -> None:
                             "whatsapp_property_search": "whatsapp_property_search",
                             "whatsapp_recent": "whatsapp_recent",
                             "whatsapp_chats": "whatsapp_chats",
+                            "whatsapp_send": "whatsapp_send",
                         }.get(action)
                         tool_keys = {
                             "open_url": ("name",),
@@ -250,6 +252,7 @@ async def _desktop_device_command_loop(cfg: Dict[str, Any]) -> None:
                             "whatsapp_property_search": ("query", "limit"),
                             "whatsapp_recent": ("limit",),
                             "whatsapp_chats": ("query",),
+                            "whatsapp_send": ("recipient", "message", "confirm"),
                         }
                         tool_params = {k: params.get(k) for k in tool_keys.get(action, ()) if isinstance(params, dict) and k in params}
                         if action == "open_url":
@@ -282,6 +285,116 @@ async def _desktop_device_command_loop(cfg: Dict[str, Any]) -> None:
             except Exception as exc:  # noqa: BLE001
                 log.debug("desktop device relay unavailable: %s", exc)
             await asyncio.sleep(2)
+
+
+async def _whatsapp_inbound_loop(cfg: Dict[str, Any]) -> None:
+    """Turn incoming WhatsApp messages into Kim chat turns and reply through the bridge.
+
+    New non-group inbound messages are polled from the local whatsmeow bridge's
+    read-only store, forwarded to the hosted brain, and the reply is sent back
+    over the bridge's /api/send endpoint. The relay only answers numbers listed
+    in KIM_WHATSAPP_INBOUND_CHATS.
+    """
+    import json as _json
+    import sqlite3
+
+    import httpx
+
+    from .tools.whatsapp import _db_path
+
+    remote = cfg.get("remote", {})
+    domain = str(remote.get("domain", "")).strip().rstrip("/")
+    if not domain:
+        log.warning("whatsapp inbound relay disabled: domain missing")
+        return
+    allowed = [entry.strip().lower() for entry in os.environ.get("KIM_WHATSAPP_INBOUND_CHATS", "").split(",") if entry.strip()]
+    if not allowed:
+        log.warning("whatsapp inbound disabled: set KIM_WHATSAPP_INBOUND_CHATS to the comma-separated numbers (e.g. 919876543210) Kim may answer")
+        return
+    token = os.environ.get("KIM_WHATSAPP_INBOUND_TOKEN", "").strip()
+    base = f"https://{domain}"
+    bridge = os.environ.get("WHATSAPP_API_BASE_URL", "http://127.0.0.1:8080/api").rstrip("/")
+    state_dir = Path(os.environ.get("KIM_STATE_DIR", str(Path.home() / ".aurora")))
+    state_path = state_dir / "whatsapp-inbound-cursor.json"
+
+    watermark = 0
+    seen: set[str] = set()
+    try:
+        saved = _json.loads(state_path.read_text(encoding="utf-8"))
+        watermark = int(saved.get("watermark", 0))
+        seen = set(str(item) for item in saved.get("seen", [])[:2000])
+    except (OSError, ValueError, TypeError):
+        pass
+
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        while True:
+            try:
+                db = _db_path()
+                if not db.exists():
+                    raise FileNotFoundError(db)
+                conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+                try:
+                    rows = conn.execute(
+                        "SELECT rowid, id, chat_jid, sender, content FROM messages "
+                        "WHERE is_from_me = 0 AND content <> '' "
+                        "AND chat_jid NOT LIKE '%@g.us' AND chat_jid NOT LIKE '%@broadcast' "
+                        "AND chat_jid NOT LIKE 'status@%' "
+                        "ORDER BY rowid DESC LIMIT 50"
+                    ).fetchall()
+                finally:
+                    conn.close()
+                for rowid, msg_id, chat_jid, sender, content in reversed(rows):
+                    if rowid <= watermark:
+                        continue
+                    watermark = max(watermark, int(rowid))
+                    key = f"{msg_id}:{chat_jid}"
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    if len(seen) > 2000:
+                        seen = set(list(seen)[-1500:])
+                    sender_num = str(sender or "").strip()
+                    jid = str(chat_jid or "").strip().lower()
+                    candidates = {jid, jid.split("@", 1)[0], sender_num.lower(), f"{sender_num}@s.whatsapp.net".lower()}
+                    if not any(entry in candidates for entry in allowed):
+                        continue
+                    if not sender_num:
+                        continue
+                    headers = {"X-Kim-WhatsApp-Token": token} if token else {}
+                    response = await client.post(
+                        f"{base}/v1/whatsapp/inbound",
+                        headers=headers,
+                        json={"chat": sender_num, "sender": sender_num, "message_id": str(msg_id)[:160], "message": str(content)[:8000]},
+                    )
+                    reply = ""
+                    ok = bool(response.is_success)
+                    if response.is_success:
+                        reply = str((response.json() or {}).get("reply", "")).strip()
+                    if reply:
+                        try:
+                            sent = await client.post(
+                                f"{bridge}/send",
+                                json={"recipient": sender_num, "message": reply[:4000]},
+                            )
+                            sent.raise_for_status()
+                        except Exception as exc:  # noqa: BLE001
+                            log.warning("whatsapp reply send failed: %s", exc)
+                    try:
+                        from .tools.tasks import record_action
+
+                        await record_action(f"whatsapp.inbound", ok, (reply or "no reply")[:200])
+                    except Exception:  # noqa: BLE001
+                        pass
+                try:
+                    state_path.parent.mkdir(parents=True, exist_ok=True)
+                    state_path.write_text(_json.dumps({"watermark": watermark, "seen": list(seen)}), encoding="utf-8")
+                except OSError:
+                    pass
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                log.debug("whatsapp inbound relay unavailable: %s", exc)
+            await asyncio.sleep(2.5)
 
 
 async def run_watch(cfg: Dict[str, Any]) -> None:
@@ -360,7 +473,16 @@ async def run_desktop(cfg: Dict[str, Any]) -> None:
     """Run only the laptop command relay; never opens the microphone."""
     _build_context(cfg)
     log.info("desktop relay starting (microphone disabled)")
-    await _desktop_device_command_loop(cfg)
+    tasks = [
+        asyncio.create_task(_desktop_device_command_loop(cfg), name="desktop-device-relay"),
+        asyncio.create_task(_whatsapp_inbound_loop(cfg), name="whatsapp-inbound-relay"),
+    ]
+    try:
+        await asyncio.gather(*tasks)
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def run_selftest(cfg: Dict[str, Any]) -> int:

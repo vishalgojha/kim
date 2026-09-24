@@ -43,6 +43,7 @@ HOSTED_LAPTOP_TOOLS = {
     "opencode_run",
     "schedule_remind", "schedule_every", "list_schedules", "schedule_cancel",
     "whatsapp_search", "whatsapp_property_search", "whatsapp_recent", "whatsapp_chats",
+    "whatsapp_send",
 }
 
 # Which device_command action can carry a laptop tool from the hosted brain.
@@ -62,6 +63,7 @@ LAPTOP_DEVICE_ACTION = {
     "whatsapp_property_search": ("whatsapp_property_search", lambda p: _without_none({"query": p.get("query", ""), "limit": p.get("limit")})),
     "whatsapp_recent": ("whatsapp_recent", lambda p: _without_none({"limit": p.get("limit")})),
     "whatsapp_chats": ("whatsapp_chats", lambda p: _without_none({"query": p.get("query", "")})),
+    "whatsapp_send": ("whatsapp_send", lambda p: _without_none({"recipient": p.get("recipient", ""), "message": p.get("message", ""), "confirm": p.get("confirm", "")})),
 }
 
 # Cloud plus routing tools: what the hosted brain may see and run by itself.
