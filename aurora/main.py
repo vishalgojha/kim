@@ -275,7 +275,6 @@ async def _desktop_device_command_loop(cfg: Dict[str, Any]) -> None:
                             pass
                         await client.post(
                             f"{base}/v1/device/commands/{command.get('id', '')}/result",
-                            headers=headers,
                             json={"action": action, "result": result, "is_error": is_error},
                         )
             except asyncio.CancelledError:
