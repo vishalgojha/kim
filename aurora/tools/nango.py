@@ -45,6 +45,14 @@ def _request(account_env: str, method: str, endpoint: str, query: dict[str, Any]
 def execute(slug: str, arguments: dict[str, Any], account_env: str) -> dict[str, Any]:
     if slug == "GMAIL_FETCH_EMAILS":
         return _request(account_env, "GET", "/gmail/v1/users/me/messages", {"q": arguments.get("query", ""), "maxResults": arguments.get("max_results", 10), "userId": "me"})
+    if slug == "GMAIL_GET_EMAIL":
+        return _request(account_env, "GET", f"/gmail/v1/users/me/messages/{arguments.get('message_id', '')}", {"format": arguments.get("format", "full"), "userId": "me"})
+    if slug == "GMAIL_FETCH_THREADS":
+        return _request(account_env, "GET", "/gmail/v1/users/me/threads", {"q": arguments.get("query", ""), "maxResults": arguments.get("max_results", 10), "userId": "me"})
+    if slug == "GMAIL_GET_THREAD":
+        return _request(account_env, "GET", f"/gmail/v1/users/me/threads/{arguments.get('thread_id', '')}", {"format": arguments.get("format", "full"), "userId": "me"})
+    if slug == "GMAIL_GET_PROFILE":
+        return _request(account_env, "GET", "/gmail/v1/users/me/profile", {"userId": "me"})
     if slug == "GMAIL_SEND_EMAIL":
         message = MIMEText(str(arguments.get("body", "")), "plain", "utf-8")
         message["To"] = str(arguments.get("recipient_email", ""))
@@ -55,6 +63,18 @@ def execute(slug: str, arguments: dict[str, Any], account_env: str) -> dict[str,
     if slug == "GOOGLECALENDAR_CREATE_EVENT":
         return _request(account_env, "POST", "/calendar/v3/calendars/primary/events", body={"summary": arguments.get("summary", ""), "description": arguments.get("description", ""), "start": {"dateTime": arguments.get("start_datetime")}, "end": {"dateTime": arguments.get("end_datetime")}})
     raise RuntimeError(f"unsupported Nango connector operation: {slug}")
+
+
+def unwrap(result: dict[str, Any]) -> dict[str, Any]:
+    """Nango proxies Gmail/Calendar bodies; unwrap the data envelope if present."""
+    if not isinstance(result, dict):
+        return {}
+    data = result.get("data")
+    if isinstance(data, dict):
+        return data
+    if isinstance(data, list):
+        return {"items": data}
+    return result
 
 
 def text(result: dict[str, Any]) -> str:

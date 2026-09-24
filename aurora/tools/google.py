@@ -85,17 +85,26 @@ def _services():
     timeout=30,
 )
 def gmail_search(query: str, max_results: int = 10) -> str:
+    limit = max(1, min(int(max_results), 50))
     if nango.enabled():
-        return nango.text(nango.execute(
-            "GMAIL_FETCH_EMAILS",
-            {"query": query, "max_results": max(1, min(int(max_results), 50)), "verbose": False},
-            "NANGO_GMAIL_CONNECTION_ID",
+        listed = nango.unwrap(nango.execute(
+            "GMAIL_FETCH_EMAILS", {"query": query, "max_results": limit, "verbose": False}, "NANGO_GMAIL_CONNECTION_ID",
         ))
+        rows = []
+        for item in listed.get("messages", [])[:limit]:
+            msg = nango.unwrap(nango.execute(
+                "GMAIL_GET_EMAIL",
+                {"message_id": item.get("id"), "format": "metadata", "metadataHeaders": "Subject,From,Date"},
+                "NANGO_GMAIL_CONNECTION_ID",
+            ))
+            headers = {h.get("name", "").lower(): h.get("value", "") for h in msg.get("payload", {}).get("headers", [])}
+            rows.append(f"{msg.get('id', item.get('id', ''))} | {headers.get('date', '')} | {headers.get('from', '')} | {headers.get('subject', '(no subject)')}")
+        return "\n".join(rows) if rows else "no matching emails"
     services, error = _services()
     if error:
         return error
     result = services["gmail"].users().messages().list(
-        userId="me", q=query, maxResults=max(1, min(int(max_results), 50))
+        userId="me", q=query, maxResults=limit
     ).execute()
     rows = []
     for item in result.get("messages", []):
@@ -114,6 +123,13 @@ def gmail_search(query: str, max_results: int = 10) -> str:
     timeout=30,
 )
 def gmail_read(message_id: str) -> str:
+    if nango.enabled():
+        msg = nango.unwrap(nango.execute(
+            "GMAIL_GET_EMAIL", {"message_id": message_id, "format": "full"}, "NANGO_GMAIL_CONNECTION_ID",
+        ))
+        headers = {h.get("name", "").lower(): h.get("value", "") for h in msg.get("payload", {}).get("headers", [])}
+        body = _body_text(msg.get("payload", {}))
+        return f"From: {headers.get('from', '')}\nDate: {headers.get('date', '')}\nSubject: {headers.get('subject', '(no subject)')}\n\n{body[:12000]}"
     services, error = _services()
     if error:
         return error
@@ -240,13 +256,39 @@ def _email_addresses(value: str) -> list[str]:
     timeout=45,
 )
 def gmail_today(max_emails: int = 20) -> str:
+    limit = max(1, min(int(max_emails), 50))
+    if nango.enabled():
+        day = datetime.now().astimezone().strftime("%Y/%m/%d")
+        listed = nango.unwrap(nango.execute(
+            "GMAIL_FETCH_EMAILS", {"query": f"after:{day}", "max_results": limit, "verbose": False}, "NANGO_GMAIL_CONNECTION_ID",
+        ))
+        rows = ["TODAY'S EMAILS"]
+        for item in listed.get("messages", [])[:limit]:
+            msg = nango.unwrap(nango.execute(
+                "GMAIL_GET_EMAIL",
+                {"message_id": item.get("id"), "format": "metadata", "metadataHeaders": "Subject,From,Date"},
+                "NANGO_GMAIL_CONNECTION_ID",
+            ))
+            headers = {h.get("name", "").lower(): h.get("value", "") for h in msg.get("payload", {}).get("headers", [])}
+            rows.append(f"- {headers.get('subject') or '(no subject)'} | {headers.get('from', '')} | {headers.get('date', '')}")
+        now = datetime.now().astimezone()
+        cal = nango.unwrap(nango.execute(
+            "GOOGLECALENDAR_FIND_FREE_SLOTS",
+            {"time_min": now.isoformat(), "time_max": (now + timedelta(days=1)).isoformat()},
+            "NANGO_CALENDAR_CONNECTION_ID",
+        ))
+        rows.append("TODAY'S CALENDAR")
+        for event in cal.get("items", []):
+            start = event.get("start", {}).get("dateTime") or event.get("start", {}).get("date", "")
+            rows.append(f"- {start} | {event.get('summary', '(untitled)')}")
+        return "\n".join(rows) if len(rows) > 2 else "nothing found for today"
     services, error = _services()
     if error:
         return error
     gmail = services["gmail"]
     calendar = services["calendar"]
     day = datetime.now().astimezone().strftime("%Y/%m/%d")
-    items = gmail.users().messages().list(userId="me", q=f"after:{day}", maxResults=max(1, min(int(max_emails), 50))).execute().get("messages", [])
+    items = gmail.users().messages().list(userId="me", q=f"after:{day}", maxResults=limit).execute().get("messages", [])
     rows = ["TODAY'S EMAILS"]
     for item in items:
         msg = gmail.users().messages().get(userId="me", id=item["id"], format="metadata", metadataHeaders=["Subject", "From", "Date"]).execute()
@@ -273,6 +315,39 @@ def gmail_today(max_emails: int = 20) -> str:
     timeout=60,
 )
 def gmail_unanswered(days: int = 120, max_results: int = 20) -> str:
+    limit = max(1, min(int(max_results), 50))
+    if nango.enabled():
+        profile = nango.unwrap(nango.execute("GMAIL_GET_PROFILE", {}, "NANGO_GMAIL_CONNECTION_ID"))
+        mine = str(profile.get("emailAddress", "")).lower()
+        listed = nango.unwrap(nango.execute(
+            "GMAIL_FETCH_THREADS",
+            {"query": f"-from:me newer_than:{max(1, min(int(days), 365))}d", "max_results": limit * 4},
+            "NANGO_GMAIL_CONNECTION_ID",
+        ))
+        seen: set[str] = set()
+        rows = []
+        for item in listed.get("threads", []):
+            thread_id = item.get("id", "")
+            if not thread_id or thread_id in seen:
+                continue
+            seen.add(thread_id)
+            thread = nango.unwrap(nango.execute(
+                "GMAIL_GET_THREAD",
+                {"thread_id": thread_id, "format": "metadata", "metadataHeaders": "Subject,From,Date"},
+                "NANGO_GMAIL_CONNECTION_ID",
+            ))
+            messages = thread.get("messages", [])
+            if not messages:
+                continue
+            latest = messages[-1]
+            headers = {h.get("name", "").lower(): h.get("value", "") for h in latest.get("payload", {}).get("headers", [])}
+            sender = headers.get("from", "")
+            if mine and mine in _email_addresses(sender):
+                continue
+            rows.append(f"{thread_id} | {headers.get('date', '')} | {sender} | {headers.get('subject') or '(no subject)'}")
+            if len(rows) >= limit:
+                break
+        return "\n".join(rows) if rows else "no unanswered email threads found"
     services, error = _services()
     if error:
         return error
@@ -314,12 +389,34 @@ def gmail_unanswered(days: int = 120, max_results: int = 20) -> str:
     timeout=60,
 )
 def gmail_contacts(max_emails: int = 200, max_contacts: int = 25) -> str:
+    scan = max(1, min(int(max_emails), 200))
+    limit = max(1, min(int(max_contacts), 100))
+    if nango.enabled():
+        # Cap the Nango scan to avoid hundreds of proxy round-trips.
+        scan = min(scan, 60)
+        mine = str(nango.unwrap(nango.execute("GMAIL_GET_PROFILE", {}, "NANGO_GMAIL_CONNECTION_ID")).get("emailAddress", "")).lower()
+        listed = nango.unwrap(nango.execute(
+            "GMAIL_FETCH_EMAILS", {"query": "newer_than:365d", "max_results": scan, "verbose": False}, "NANGO_GMAIL_CONNECTION_ID",
+        ))
+        counts: dict[str, int] = {}
+        for item in listed.get("messages", [])[:scan]:
+            msg = nango.unwrap(nango.execute(
+                "GMAIL_GET_EMAIL",
+                {"message_id": item.get("id"), "format": "metadata", "metadataHeaders": "From,To,Cc"},
+                "NANGO_GMAIL_CONNECTION_ID",
+            ))
+            headers = {h.get("name", "").lower(): h.get("value", "") for h in msg.get("payload", {}).get("headers", [])}
+            for address in _email_addresses(" ".join(headers.get(h, "") for h in ("from", "to", "cc"))):
+                if address != mine:
+                    counts[address] = counts.get(address, 0) + 1
+        rows = [f"{email} | {count} messages" for email, count in sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))[:limit]]
+        return "\n".join(rows) if rows else "no contacts found"
     services, error = _services()
     if error:
         return error
     gmail = services["gmail"]
     mine = str(gmail.users().getProfile(userId="me").execute().get("emailAddress", "")).lower()
-    messages = gmail.users().messages().list(userId="me", q="newer_than:365d", maxResults=max(1, min(int(max_emails), 500))).execute().get("messages", [])
+    messages = gmail.users().messages().list(userId="me", q="newer_than:365d", maxResults=scan).execute().get("messages", [])
     counts: dict[str, int] = {}
     for item in messages:
         msg = gmail.users().messages().get(userId="me", id=item["id"], format="metadata", metadataHeaders=["From", "To", "Cc"]).execute()

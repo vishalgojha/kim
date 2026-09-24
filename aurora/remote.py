@@ -429,6 +429,7 @@ class RemoteServer:
                         allowed = {
                             "open_url", "open_app", "media", "volume", "flashlight", "notify",
                             "type_text", "press_key", "screenshot", "playwright_run", "browser_action", "computer_action",
+                            "whatsapp_search", "whatsapp_property_search", "whatsapp_recent", "whatsapp_chats",
                         }
                         if action not in allowed:
                             raise ValueError(f"action must be one of {sorted(allowed)}")

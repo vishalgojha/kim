@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -110,7 +111,7 @@ class AgentCore:
                 "headers": {"Authorization": f"Bearer {primary_key}", "Content-Type": "application/json"},
             })
         if sarvam_key:
-            base = os.environ.get("SARVAM_BASE_URL", "https://api.sarvam.ai").rstrip("/")
+            base = os.environ.get("SARVAM_BASE_URL", "https://api.sarvam.ai/v1").rstrip("/")
             providers.append({
                 "name": "sarvam",
                 "model": os.environ.get("SARVAM_MODEL", "sarvam-105b"),
@@ -153,9 +154,21 @@ class AgentCore:
         history = self.sessions.setdefault(session_id[:100] or "web", [])
         base_history = (history + [{"role": "user", "content": message}])[-20:]
         errors: List[str] = []
+        budget = float(os.environ.get("KIM_CHAT_BUDGET_SECONDS", "100").strip())
+        deadline = asyncio.get_running_loop().time() + budget
         for provider in providers:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                errors.append(f"{provider['name']}: overall time budget ({budget}s) exhausted")
+                continue
             try:
-                answer, tools_used, final_history = await self._run_provider(provider, base_history, request_approval)
+                answer, tools_used, final_history = await asyncio.wait_for(
+                    self._run_provider(provider, base_history, request_approval), timeout=remaining
+                )
+            except asyncio.TimeoutError:
+                log.warning("LLM provider %s exceeded the %ss turn budget", provider["name"], int(budget))
+                errors.append(f"{provider['name']}: took longer than the {int(budget)}s turn budget")
+                continue
             except Exception as exc:  # noqa: BLE001
                 log.warning("LLM provider %s failed; %s", provider["name"], exc)
                 errors.append(f"{provider['name']}: {str(exc)[:300]}")

@@ -163,6 +163,10 @@ class ElevenTextChat:
                         "result": result[:20_000],
                         "is_error": is_error,
                     }))
+                    # The agent needs time to digest the tool result and produce
+                    # a final answer, so a fresh window starts after each call
+                    # instead of burning the one global budget.
+                    deadline = asyncio.get_running_loop().time() + 45
                     continue
 
                 text = self._part_text(msg)
